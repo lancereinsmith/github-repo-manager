@@ -93,6 +93,7 @@ class GitHubRepoApp(App[None]):
         Binding("r", "refresh", "Refresh"),
         Binding("e", "export_excel", "Excel"),
         Binding("o", "open_browser", "Open"),
+        Binding("a", "toggle_archive", "Archive"),
         Binding("d", "delete_repo", "Delete"),
         Binding("slash", "filter", "Filter"),
     ]
@@ -210,6 +211,21 @@ class GitHubRepoApp(App[None]):
                 self.notify(f"Delete failed: {msg}", severity="error")
 
         self.push_screen(ConfirmDeleteScreen(full), after)
+
+    def action_toggle_archive(self) -> None:
+        repo = self._selected_repo()
+        if not repo:
+            return
+        archived = bool(repo.get("archived"))
+        target = not archived
+        ok, msg = self.client.set_archived(repo["full_name"], archived=target)
+        if not ok:
+            self.notify(f"Archive failed: {msg}", severity="error")
+            return
+        repo["archived"] = target
+        self.all_repos.sort(key=lambda r: bool(r.get("archived")))
+        self.refresh_table()
+        self.notify(msg, severity="warning")
 
     def action_filter(self) -> None:
         def after(text: str | None) -> None:

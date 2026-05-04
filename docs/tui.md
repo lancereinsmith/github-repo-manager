@@ -19,6 +19,7 @@ your repos.
 | `r` | Refresh from GitHub |
 | `e` | Export the current list to `github_repos.xlsx` |
 | `o` | Open the selected repo in your browser |
+| `a` | Toggle archive state of the selected repo |
 | `d` | Delete the selected repo (modal asks you to retype the full name) |
 | `/` | Open a filter prompt (substring match on name and description) |
 
@@ -32,6 +33,16 @@ re-query GitHub.
 A red-bordered modal shows the repo's full name and an `Input`. The
 deletion only proceeds if the value you type matches exactly. `Esc`
 cancels.
+
+!!! note "Token scope: `delete_repo`"
+    If a delete fails with "Must have admin rights to Repository", your
+    token is missing the `delete_repo` scope. For `gh auth login` users:
+
+    ```bash
+    gh auth refresh -h github.com -s delete_repo
+    ```
+
+    A PAT in `GITHUB_TOKEN` must likewise be issued with `delete_repo`.
 
 ### Filter
 

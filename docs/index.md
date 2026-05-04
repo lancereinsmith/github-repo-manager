@@ -9,6 +9,7 @@ owned by your authenticated user.
 - **`excel`** — export every repo to a landscape `.xlsx` (banded rows, frozen
   header, autofilter, sorted by Last Updated descending)
 - **`delete`** — delete a repo by `owner/name` with a confirmation prompt
+- **`archive`** — archive (or `--unarchive`) a repo
 - **`tui`** — open an interactive Textual table where you can filter, open
   repos in your browser, export, and delete
 

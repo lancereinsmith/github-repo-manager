@@ -1,4 +1,4 @@
-"""Command-line entry point: `list`, `delete`, `excel`, `tui`."""
+"""Command-line entry point: `list`, `delete`, `archive`, `excel`, `tui`."""
 
 from __future__ import annotations
 
@@ -54,6 +54,18 @@ def cli_delete(client: GitHubClient, full_name: str, force: bool) -> int:
     return 0 if ok else 1
 
 
+def cli_archive(client: GitHubClient, full_name: str, unarchive: bool, force: bool) -> int:
+    verb = "unarchive" if unarchive else "archive"
+    if not force:
+        confirm = input(f"{verb.capitalize()} {full_name}? [y/N] ").strip().lower()
+        if confirm not in ("y", "yes"):
+            print("Cancelled.")
+            return 1
+    ok, msg = client.set_archived(full_name, archived=not unarchive)
+    print(("✅ " if ok else "❌ ") + msg)
+    return 0 if ok else 1
+
+
 def cli_excel(client: GitHubClient, path: str) -> int:
     repos = client.list_repos()
     if not repos:
@@ -86,6 +98,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_del.add_argument("repo_name", help="username/repo")
     p_del.add_argument("--force", "-f", action="store_true")
 
+    p_arch = sub.add_parser("archive", help="Archive (or unarchive) a repo.")
+    p_arch.add_argument("repo_name", help="username/repo")
+    p_arch.add_argument("--unarchive", "-u", action="store_true", help="Unarchive instead.")
+    p_arch.add_argument("--force", "-f", action="store_true")
+
     p_xl = sub.add_parser("excel", help="Export repos to xlsx.")
     p_xl.add_argument("--output", "-o", default=DEFAULT_EXCEL_FILE)
 
@@ -108,6 +125,8 @@ def main(argv: list[str] | None = None) -> int:
         return cli_list(client, args.detailed)
     if args.command == "delete":
         return cli_delete(client, args.repo_name, args.force)
+    if args.command == "archive":
+        return cli_archive(client, args.repo_name, args.unarchive, args.force)
     if args.command == "excel":
         return cli_excel(client, args.output)
     if args.command == "tui":

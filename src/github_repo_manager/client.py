@@ -96,3 +96,15 @@ class GitHubClient:
         if r.status_code == 204:
             return True, f"Deleted {full_name}"
         return False, f"HTTP {r.status_code}: {r.text[:160]}"
+
+    def set_archived(self, full_name: str, archived: bool) -> tuple[bool, str]:
+        """Archive or unarchive a repository. Returns `(ok, message)`."""
+        r = self.session.patch(
+            f"{GITHUB_API}/repos/{full_name}",
+            json={"archived": archived},
+            timeout=30,
+        )
+        verb = "Archived" if archived else "Unarchived"
+        if r.status_code == 200:
+            return True, f"{verb} {full_name}"
+        return False, f"HTTP {r.status_code}: {r.text[:160]}"

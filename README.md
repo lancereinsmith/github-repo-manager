@@ -2,7 +2,7 @@
 
 List, manage, and export your GitHub repositories from the terminal.
 
-- **CLI** — `list`, `delete`, `excel` subcommands
+- **CLI** — `list`, `delete`, `archive`, `excel` subcommands
 - **TUI** — interactive [Textual](https://textual.textualize.io/) table with filter, open-in-browser, delete, and Excel export
 - **Excel export** — landscape `.xlsx` with banded rows, frozen header, and autofilter, sorted by Last Updated descending
 
