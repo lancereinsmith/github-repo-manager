@@ -1,0 +1,64 @@
+[project]
+name = "github-repo-manager"
+version = "0.1.0"
+description = "List, manage, and export GitHub repositories — CLI, TUI, and Excel export."
+readme = "README.md"
+authors = [
+    { name = "Lance Reinsmith", email = "info@k2rad.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "openpyxl>=3.1.5",
+    "requests>=2.33.1",
+    "rich>=15.0.0",
+    "textual>=8.2.5",
+]
+
+[project.scripts]
+github-repo-manager = "github_repo_manager.cli:main"
+gman = "github_repo_manager.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.12",
+    "ty>=0.0.34",
+    "zensical>=0.0.39",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+src = ["src"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",  # pycodestyle
+    "F",       # pyflakes
+    "I",       # isort
+    "B",       # bugbear
+    "UP",      # pyupgrade
+    "SIM",     # simplify
+    "N",       # pep8-naming
+    "RUF",     # ruff
+]
+ignore = [
+    "E501",    # line length handled by formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.ty.environment]
+python-version = "3.14"
+python = ".venv"
+root = ["./src"]
+
+[tool.ty.src]
+include = ["src"]
+
+[tool.ty.terminal]
+output-format = "concise"
