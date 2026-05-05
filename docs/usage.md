@@ -47,12 +47,7 @@ github-repo-manager delete username/old-project --force
 !!! note "Token scope: `delete_repo`"
     Deletion requires the `delete_repo` scope, which `gh auth login` does
     **not** request by default. If GitHub returns "Must have admin rights
-    to Repository", run:
-
-    ```bash
-    gh auth refresh -h github.com -s delete_repo
-    ```
-
+    to Repository", run `gh auth refresh -h github.com -s delete_repo`.
     A PAT in `GITHUB_TOKEN` must likewise be issued with `delete_repo`.
 
 ## `archive`

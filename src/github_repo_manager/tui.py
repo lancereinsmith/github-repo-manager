@@ -93,7 +93,7 @@ class GitHubRepoApp(App[None]):
         Binding("r", "refresh", "Refresh"),
         Binding("e", "export_excel", "Excel"),
         Binding("o", "open_browser", "Open"),
-        Binding("a", "toggle_archive", "Archive"),
+        Binding("a", "toggle_archive", "Archive/Unarchive"),
         Binding("d", "delete_repo", "Delete"),
         Binding("slash", "filter", "Filter"),
     ]
