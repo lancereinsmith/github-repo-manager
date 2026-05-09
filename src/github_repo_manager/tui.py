@@ -83,6 +83,39 @@ class FilterScreen(ModalScreen[str]):
         self.dismiss(self.current)
 
 
+class EditDescriptionScreen(ModalScreen[str | None]):
+    """Modal for editing the description of a repo. Returns `None` if cancelled."""
+
+    DEFAULT_CSS = """
+    EditDescriptionScreen { align: center middle; }
+    #edialog {
+        width: 80; height: auto;
+        border: thick $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, full_name: str, current: str = "") -> None:
+        super().__init__()
+        self.full_name = full_name
+        self.current = current
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="edialog"):
+            yield Label(f"Edit description for {self.full_name} (esc to cancel):")
+            yield Input(value=self.current, id="desc")
+
+    @on(Input.Submitted)
+    def _submit(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class GitHubRepoApp(App[None]):
     """Interactive table of the user's repos with delete/export actions."""
 
@@ -94,6 +127,7 @@ class GitHubRepoApp(App[None]):
         Binding("e", "export_excel", "Excel"),
         Binding("o", "open_browser", "Open"),
         Binding("a", "toggle_archive", "Archive/Unarchive"),
+        Binding("c", "edit_description", "Change desc"),
         Binding("d", "delete_repo", "Delete"),
         Binding("slash", "filter", "Filter"),
     ]
@@ -233,3 +267,24 @@ class GitHubRepoApp(App[None]):
             self.refresh_table()
 
         self.push_screen(FilterScreen(self.filter_text), after)
+
+    def action_edit_description(self) -> None:
+        repo = self._selected_repo()
+        if not repo:
+            return
+        full = repo["full_name"]
+        current = repo.get("description") or ""
+
+        def after(new_desc: str | None) -> None:
+            if new_desc is None:
+                self.notify("Cancelled")
+                return
+            ok, msg = self.client.set_description(full, new_desc)
+            if not ok:
+                self.notify(f"Update failed: {msg}", severity="error")
+                return
+            repo["description"] = new_desc
+            self.refresh_table()
+            self.notify(msg)
+
+        self.push_screen(EditDescriptionScreen(full, current), after)

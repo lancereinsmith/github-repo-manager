@@ -108,3 +108,14 @@ class GitHubClient:
         if r.status_code == 200:
             return True, f"{verb} {full_name}"
         return False, f"HTTP {r.status_code}: {r.text[:160]}"
+
+    def set_description(self, full_name: str, description: str) -> tuple[bool, str]:
+        """Update a repository's description. Returns `(ok, message)`."""
+        r = self.session.patch(
+            f"{GITHUB_API}/repos/{full_name}",
+            json={"description": description},
+            timeout=30,
+        )
+        if r.status_code == 200:
+            return True, f"Updated description for {full_name}"
+        return False, f"HTTP {r.status_code}: {r.text[:160]}"

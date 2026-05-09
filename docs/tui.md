@@ -20,6 +20,7 @@ your repos.
 | `e` | Export the current list to `github_repos.xlsx` |
 | `o` | Open the selected repo in your browser |
 | `a` | Archive the selected repo, or unarchive it if already archived |
+| `c` | Change the description of the selected repo |
 | `d` | Delete the selected repo (modal asks you to retype the full name) |
 | `/` | Open a filter prompt (substring match on name and description) |
 
@@ -44,3 +45,9 @@ cancels.
 
 A simple text input. Submit empty to clear the filter; `Esc` keeps the
 previous value.
+
+### Edit description
+
+A text input pre-populated with the current description. Submit to send
+the new value to GitHub via PATCH; submit empty to clear the description.
+`Esc` cancels without making a request.
