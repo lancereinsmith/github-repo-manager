@@ -26,7 +26,7 @@ build-backend = "uv_build"
 dev = [
     "ruff>=0.15.12",
     "ty>=0.0.34",
-    "zensical>=0.0.39",
+    "zensical>=0.0.41",
 ]
 
 [tool.ruff]
