@@ -134,5 +134,17 @@ def main(argv: list[str] | None = None) -> int:
     return 1
 
 
+def tui_main() -> int:
+    """Entry point that launches the TUI directly, skipping argparse."""
+    client = GitHubClient()
+    if not client.token:
+        print(
+            "Error: no GitHub token found. Set GITHUB_TOKEN or run `gh auth login`.",
+            file=sys.stderr,
+        )
+        return 1
+    return cli_tui(client)
+
+
 if __name__ == "__main__":
     sys.exit(main())

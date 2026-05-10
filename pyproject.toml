@@ -15,8 +15,8 @@ dependencies = [
 ]
 
 [project.scripts]
-github-repo-manager = "github_repo_manager.cli:main"
 gman = "github_repo_manager.cli:main"
+gman-tui = "github_repo_manager.cli:tui_main"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
