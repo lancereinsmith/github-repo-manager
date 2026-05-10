@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import webbrowser
+from pathlib import Path
 from typing import Any, ClassVar
 
 from textual import on, work
@@ -125,6 +129,7 @@ class GitHubRepoApp(App[None]):
         Binding("q", "quit", "Quit"),
         Binding("r", "refresh", "Refresh"),
         Binding("e", "export_excel", "Excel"),
+        Binding("x", "open_excel", "Open xlsx"),
         Binding("o", "open_browser", "Open"),
         Binding("a", "toggle_archive", "Archive/Unarchive"),
         Binding("c", "edit_description", "Change desc"),
@@ -225,6 +230,23 @@ class GitHubRepoApp(App[None]):
         if repo and repo.get("html_url"):
             webbrowser.open(repo["html_url"])
             self.notify(f"Opened {repo['full_name']}")
+
+    def action_open_excel(self) -> None:
+        path = Path(DEFAULT_EXCEL_FILE).resolve()
+        if not path.is_file():
+            self.notify(f"No spreadsheet at {path} — press 'e' to export first.", severity="warning")
+            return
+        try:
+            if sys.platform == "darwin":
+                subprocess.run(["open", str(path)], check=True)
+            elif sys.platform == "win32":
+                os.startfile(str(path))
+            else:
+                subprocess.run(["xdg-open", str(path)], check=True)
+        except (OSError, subprocess.CalledProcessError) as e:
+            self.notify(f"Open failed: {e}", severity="error")
+            return
+        self.notify(f"Opened {path.name}")
 
     def action_delete_repo(self) -> None:
         repo = self._selected_repo()

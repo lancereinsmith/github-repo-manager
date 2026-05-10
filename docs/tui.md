@@ -18,6 +18,7 @@ your repos.
 | `q` | Quit |
 | `r` | Refresh from GitHub |
 | `e` | Export the current list to `github_repos.xlsx` |
+| `x` | Open `github_repos.xlsx` in your default spreadsheet app |
 | `o` | Open the selected repo in your browser |
 | `a` | Archive the selected repo, or unarchive it if already archived |
 | `c` | Change the description of the selected repo |
