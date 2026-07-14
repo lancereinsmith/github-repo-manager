@@ -206,6 +206,22 @@ def test_delete_backup_failure_aborts(monkeypatch: pytest.MonkeyPatch, capsys, t
     assert deleted == []  # deletion never attempted
 
 
+def test_info_plain_output_survives_markup(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    from gman.details import RepoDetails
+
+    repo = make_repo("alpha", description="see [/] notes [WIP]")
+
+    class FakeClient:
+        def get_repo(self, full_name):
+            return repo
+
+    monkeypatch.setattr(cli, "fetch_details", lambda c, r: RepoDetails(repo=r, open_prs=0))
+    rc = cli.cli_info(FakeClient(), "octocat/alpha", as_json=False)
+
+    assert rc == 0
+    assert "WIP" in capsys.readouterr().out
+
+
 def test_delete_backup_success_then_delete(
     monkeypatch: pytest.MonkeyPatch, capsys, tmp_path
 ) -> None:

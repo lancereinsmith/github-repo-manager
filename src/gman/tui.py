@@ -9,6 +9,7 @@ import webbrowser
 from pathlib import Path
 from typing import Any, ClassVar
 
+from rich.markup import escape
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
@@ -42,7 +43,7 @@ def row_for_repo(
     return (
         repo["name"],
         vis,
-        desc,
+        escape(desc),
         repo.get("language") or "",
         str(repo.get("stargazers_count", 0)),
         str(repo.get("open_issues_count", 0)),

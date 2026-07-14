@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from rich.markup import escape
 from rich.table import Table
 
 from gman.client import GitHubClient, GitHubError
@@ -105,6 +106,7 @@ def backup_repo(client: GitHubClient, repo: dict[str, Any], dest_dir: Path) -> P
     """Download `{name}-{default_branch}.tar.gz` into `dest_dir`; returns the path."""
     branch = repo.get("default_branch") or "HEAD"
     dest = unique_path(dest_dir / f"{repo['name']}-{branch}.tar.gz")
+    dest_dir.mkdir(parents=True, exist_ok=True)
     return client.download_tarball(repo["full_name"], branch, dest)
 
 
@@ -113,11 +115,14 @@ def probe_capabilities(client: GitHubClient) -> None:
 
     Write families cannot be probed non-destructively and stay unknown.
     """
-    r = client._request(
-        "GET",
-        "/user/repos",
-        params={"per_page": 1, "sort": "updated", "affiliation": "owner"},
-    )
+    try:
+        r = client._request(
+            "GET",
+            "/user/repos",
+            params={"per_page": 1, "sort": "updated", "affiliation": "owner"},
+        )
+    except GitHubError:
+        return
     if r.status_code != 200:
         return
     batch = r.json()
@@ -151,16 +156,16 @@ def render_details(details: RepoDetails) -> Table:
     if repo.get("archived"):
         badges.append("📦 archived")
     vis = "🔒 private" if repo.get("private") else "🌐 public"
-    grid.add_row("Repository", f"{repo.get('full_name', '')}  {vis} {' '.join(badges)}")
-    grid.add_row("Description", repo.get("description") or "—")
+    grid.add_row("Repository", f"{escape(repo.get('full_name', ''))}  {vis} {' '.join(badges)}")
+    grid.add_row("Description", escape(repo.get("description") or "") or "—")
     topics = repo.get("topics") or []
-    grid.add_row("Topics", ", ".join(topics) if topics else "—")
+    grid.add_row("Topics", escape(", ".join(topics)) if topics else "—")
     lic = repo.get("license") or {}
     grid.add_row(
         "Facts",
         f"★ {repo.get('stargazers_count', 0)}  ⑂ {repo.get('forks_count', 0)}  "
-        f"size {repo.get('size', 0)} KB  license {lic.get('spdx_id') or '—'}  "
-        f"branch {repo.get('default_branch') or '—'}",
+        f"size {repo.get('size', 0)} KB  license {escape(lic.get('spdx_id') or '') or '—'}  "
+        f"branch {escape(repo.get('default_branch') or '') or '—'}",
     )
     grid.add_row(
         "Dates",
@@ -179,7 +184,7 @@ def render_details(details: RepoDetails) -> Table:
     lr = details.latest_release
     grid.add_row(
         "Latest release",
-        f"{lr.get('tag_name')} — {_fmt_date(lr.get('published_at'))}"
+        f"{escape(lr.get('tag_name') or '')} — {_fmt_date(lr.get('published_at'))}"
         if lr
         else dash("latest_release"),
     )
@@ -189,7 +194,7 @@ def render_details(details: RepoDetails) -> Table:
         glyph = {"success": "✅", "failure": "❌"}.get(run.get("conclusion") or "", "…")
         grid.add_row(
             "Latest CI run",
-            f"{glyph} {run.get('name') or 'workflow'} "
+            f"{glyph} {escape(run.get('name') or 'workflow')} "
             f"({run.get('conclusion') or run.get('status')}) {_fmt_date(run.get('created_at'))}",
         )
     else:

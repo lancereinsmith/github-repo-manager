@@ -23,3 +23,9 @@ def test_row_for_repo_truncates_description() -> None:
     repo = make_repo("gamma", description="x" * 100)
     row = row_for_repo(repo, pinned=set())
     assert len(row[2]) == 78 and row[2].endswith("…")
+
+
+def test_row_for_repo_escapes_markup_in_description() -> None:
+    repo = make_repo("delta", description="see [/] notes")
+    row = row_for_repo(repo, pinned=set())
+    assert row[2] == r"see \[/] notes"

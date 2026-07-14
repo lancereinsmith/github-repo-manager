@@ -7,8 +7,8 @@ your repos.
 
 - **Header** — app title and a sub-title showing `username — visible/total`
   plus the current filter, if any
-- **Table** — six columns: Name, Visibility (🔒/🌐), Description, Lang,
-  Stars, Updated
+- **Table** — seven columns: Name, Vis. (🔒/🌐), Description, Lang,
+  Stars, Open (open issues + PRs), Updated
 - **Footer** — keybinding hints
 
 ## Keybindings

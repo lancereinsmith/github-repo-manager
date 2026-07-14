@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from gman.capabilities import ALL_FAMILIES
@@ -90,7 +91,7 @@ def cli_list(client: GitHubClient, detailed: bool, as_json: bool, affiliation: s
         row = [
             name,
             "🔒" if repo["private"] else "🌐",
-            repo.get("description") or "",
+            escape(repo.get("description") or ""),
             (repo.get("updated_at") or "")[:10],
         ]
         if detailed:

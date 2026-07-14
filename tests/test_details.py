@@ -143,3 +143,45 @@ def test_probe_capabilities_marks_read_families(client: GitHubClient) -> None:
 def test_probe_capabilities_silent_on_failure(client: GitHubClient) -> None:
     responses.add(responses.GET, f"{DEFAULT_API_URL}/user/repos", status=401)
     probe_capabilities(client)  # must not raise
+
+
+def test_render_details_survives_markup_in_metadata() -> None:
+    from io import StringIO
+
+    from rich.console import Console
+
+    details = RepoDetails(
+        repo=make_repo("r", description="see [/] notes [WIP]", topics=["a[b]c"]),
+        open_prs=0,
+    )
+    console = Console(file=StringIO(), width=200)
+    console.print(render_details(details))  # must not raise MarkupError
+    out = console.file.getvalue()
+    assert "[WIP]" in out
+    assert "a[b]c" in out
+
+
+@responses.activate
+def test_backup_repo_creates_missing_dir(client: GitHubClient, tmp_path: Path) -> None:
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/octocat/r/tarball/main",
+        body=b"bytes",
+        status=200,
+    )
+    dest = tmp_path / "does" / "not" / "exist"
+    path = backup_repo(client, make_repo("r"), dest)
+    assert path == dest / "r-main.tar.gz"
+    assert path.read_bytes() == b"bytes"
+
+
+@responses.activate
+def test_probe_capabilities_silent_on_rate_limit(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/user/repos",
+        json={"message": "rate limited"},
+        status=403,
+        headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1893456000"},
+    )
+    probe_capabilities(client)  # must not raise
