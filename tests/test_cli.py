@@ -324,3 +324,28 @@ def test_edit_topics_conflict_errors(capsys) -> None:
     rc = cli.cli_edit(FakeClient(), args)
     assert rc == 2
     assert "cannot be combined" in capsys.readouterr().err
+
+
+def test_edit_invalid_topic_applies_nothing(capsys) -> None:
+    """Exit 2 must always mean nothing was written."""
+    parser = cli.build_parser()
+    args = parser.parse_args(["edit", "octocat/r", "--wiki", "off", "--add-topic", "Bad_Topic!"])
+    calls: list = []
+
+    class FakeClient:
+        def update_repo(self, full, fields):
+            calls.append(("patch", full, fields))
+            return True, f"Updated {full}"
+
+        def get_repo(self, full):
+            return make_repo("r")
+
+        def set_topics(self, full, topics):
+            calls.append(("topics", full, topics))
+            return True, "ok"
+
+    rc = cli.cli_edit(FakeClient(), args)
+
+    assert rc == 2
+    assert calls == []  # no write happened
+    assert "invalid topic" in capsys.readouterr().err

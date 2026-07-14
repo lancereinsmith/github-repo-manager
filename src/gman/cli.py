@@ -280,6 +280,22 @@ def cli_edit(client: GitHubClient, args: argparse.Namespace) -> int:
         )
         return 2
 
+    # Validate all topic input BEFORE any write, so exit 2 always means "nothing applied".
+    replacement: list[str] | None = None
+    added: list[str] = []
+    removed: list[str] = []
+    errors: list[str] = []
+    if args.topics is not None:
+        replacement, errors = normalize_topics(args.topics)
+    elif wants_topics:
+        added, add_errors = normalize_topics(",".join(args.add_topic))
+        removed, remove_errors = normalize_topics(",".join(args.remove_topic))
+        errors = add_errors + remove_errors
+    if errors:
+        for e in errors:
+            print(f"Error: {e}", file=sys.stderr)
+        return 2
+
     all_ok = True
     if fields:
         ok, msg = client.update_repo(full, fields)
@@ -287,22 +303,15 @@ def cli_edit(client: GitHubClient, args: argparse.Namespace) -> int:
         all_ok = all_ok and ok
 
     if wants_topics:
-        if args.topics is not None:
-            topics, errors = normalize_topics(args.topics)
+        if replacement is not None:
+            topics = replacement
         else:
             repo = client.get_repo(full)
             topics = list(repo.get("topics") or [])
-            added, errors = normalize_topics(",".join(args.add_topic))
             for t in added:
                 if t not in topics:
                     topics.append(t)
-            removed, rerrs = normalize_topics(",".join(args.remove_topic))
-            errors += rerrs
             topics = [t for t in topics if t not in removed]
-        if errors:
-            for e in errors:
-                print(f"Error: {e}", file=sys.stderr)
-            return 2
         ok, msg = client.set_topics(full, topics)
         print(("✅ " if ok else "❌ ") + msg)
         all_ok = all_ok and ok
