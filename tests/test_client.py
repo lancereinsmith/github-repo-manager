@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 import responses
 from conftest import make_repo
@@ -333,3 +335,60 @@ def test_pr_count_no_link_header(client: GitHubClient) -> None:
 def test_pr_count_zero(client: GitHubClient) -> None:
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/r/pulls", json=[], status=200)
     assert client.get_open_pr_count("o/r") == 0
+
+
+@responses.activate
+def test_download_tarball_follows_redirect(client: GitHubClient, tmp_path: Path) -> None:
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/o/r/tarball/main",
+        status=302,
+        headers={"Location": "https://codeload.github.com/o/r/legacy.tar.gz/main"},
+    )
+    responses.add(
+        responses.GET,
+        "https://codeload.github.com/o/r/legacy.tar.gz/main",
+        body=b"tarball-bytes",
+        status=200,
+    )
+    dest = tmp_path / "r-main.tar.gz"
+    assert client.download_tarball("o/r", "main", dest) == dest
+    assert dest.read_bytes() == b"tarball-bytes"
+
+
+@responses.activate
+def test_download_tarball_failure_raises(client: GitHubClient, tmp_path: Path) -> None:
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/r/tarball/main", status=404)
+    with pytest.raises(GitHubError, match="404"):
+        client.download_tarball("o/r", "main", tmp_path / "x.tar.gz")
+
+
+@responses.activate
+def test_pinned_repos_happy_path(client: GitHubClient) -> None:
+    responses.add(
+        responses.POST,
+        f"{DEFAULT_API_URL}/graphql",
+        json={
+            "data": {
+                "viewer": {
+                    "pinnedItems": {"nodes": [{"nameWithOwner": "o/a"}, {"nameWithOwner": "o/b"}]}
+                }
+            }
+        },
+        status=200,
+    )
+    assert client.get_pinned_repos() == {"o/a", "o/b"}
+
+
+@responses.activate
+def test_pinned_repos_failure_is_empty_set(client: GitHubClient) -> None:
+    responses.add(
+        responses.POST,
+        f"{DEFAULT_API_URL}/graphql",
+        json={"errors": [{"message": "nope"}]},
+        status=200,
+    )
+    assert client.get_pinned_repos() == set()
+
+    responses.add(responses.POST, f"{DEFAULT_API_URL}/graphql", status=403)
+    assert client.get_pinned_repos() == set()

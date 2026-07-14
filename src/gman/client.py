@@ -9,6 +9,7 @@ import subprocess
 import time
 from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -311,3 +312,41 @@ class GitHubClient:
             return 0
         m = re.search(r'[?&]page=(\d+)>;\s*rel="last"', r.headers.get("Link", ""))
         return int(m.group(1)) if m else len(body)
+
+    def download_tarball(self, full_name: str, ref: str, dest: Path) -> Path:
+        """Stream a repo tarball to `dest`. Raises `GitHubError` on failure.
+
+        The endpoint 302s to a short-lived codeload URL; requests follows it.
+        Git contents only — no issues, wiki, or release assets.
+        """
+        r = self._request("GET", f"/repos/{full_name}/tarball/{ref}", stream=True, timeout=120)
+        if r.status_code == 403:
+            self.capabilities.mark("contents.read", False)
+        if r.status_code != 200:
+            raise GitHubError(f"Tarball download failed: HTTP {r.status_code}")
+        with open(dest, "wb") as f:
+            for chunk in r.iter_content(chunk_size=65536):
+                f.write(chunk)
+        return dest
+
+    _PINNED_QUERY = (
+        "query { viewer { pinnedItems(first: 6, types: REPOSITORY) "
+        "{ nodes { ... on Repository { nameWithOwner } } } } }"
+    )
+
+    def get_pinned_repos(self) -> set[str]:
+        """Return `nameWithOwner` for the user's pinned repos; empty set on any failure."""
+        try:
+            r = self._request("POST", "/graphql", json={"query": self._PINNED_QUERY})
+        except GitHubError:
+            return set()
+        if r.status_code != 200:
+            return set()
+        body = r.json()
+        if "errors" in body:
+            return set()
+        try:
+            nodes = body["data"]["viewer"]["pinnedItems"]["nodes"]
+        except (KeyError, TypeError):
+            return set()
+        return {n["nameWithOwner"] for n in nodes if n and "nameWithOwner" in n}
