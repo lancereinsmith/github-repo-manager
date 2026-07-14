@@ -118,7 +118,7 @@ class GitHubClient:
             if r.status_code >= 500 and attempt < self.max_retries:
                 time.sleep(2**attempt)
                 continue
-            if not self._scopes_captured:
+            if not self._scopes_captured and r.ok:
                 self._scopes_captured = True
                 self.token_info.apply_scopes_header(r.headers.get("X-OAuth-Scopes"))
             return r

@@ -188,3 +188,19 @@ def test_token_source_flag() -> None:
 def test_token_source_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GITHUB_TOKEN", "t")
     assert GitHubClient().token_source == "GITHUB_TOKEN env"
+
+
+@responses.activate
+def test_scopes_still_captured_after_failed_first_request(client: GitHubClient) -> None:
+    """A dead first response must not latch the capture flag."""
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/r", status=404)
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/user",
+        json={"login": "o"},
+        status=200,
+        headers={"X-OAuth-Scopes": "repo"},
+    )
+    client._request("GET", "/repos/o/r")  # 404: not ok, must not latch
+    client.whoami()
+    assert client.token_info.scopes == {"repo"}
