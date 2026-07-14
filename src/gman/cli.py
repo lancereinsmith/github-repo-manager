@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from gman.client import GitHubClient, GitHubError
+from gman.details import details_to_dict, fetch_details, render_details
 from gman.excel import DEFAULT_EXCEL_FILE, write_excel
 
 _JSON_FIELDS = (
@@ -113,6 +114,19 @@ def cli_describe(client: GitHubClient, full_name: str, description: str) -> int:
     return 0 if ok else 1
 
 
+def cli_info(client: GitHubClient, full_name: str, as_json: bool) -> int:
+    repo = client.get_repo(full_name)
+    details = fetch_details(client, repo)
+    if as_json:
+        json.dump(details_to_dict(details), sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        for name, hint in sorted(details.hints.items()):
+            print(f"note: {name} unavailable — {hint}", file=sys.stderr)
+        return 0
+    Console().print(render_details(details))
+    return 0
+
+
 def cli_excel(client: GitHubClient, path: str, affiliation: str) -> int:
     repos = _fetch_repos(client, affiliation, quiet=False)
     if not repos:
@@ -166,6 +180,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_desc.add_argument("repo_name", help="username/repo")
     p_desc.add_argument("description", help="New description (empty string clears it).")
 
+    p_info = sub.add_parser("info", help="Show detailed info for one repo.")
+    p_info.add_argument("repo_name", help="username/repo")
+    p_info.add_argument("--json", dest="as_json", action="store_true")
+
     p_xl = sub.add_parser("excel", help="Export repos to xlsx.")
     p_xl.add_argument("--output", "-o", default=DEFAULT_EXCEL_FILE)
     p_xl.add_argument("--affiliation", default="owner", help="API affiliation filter.")
@@ -196,6 +214,8 @@ def main(argv: list[str] | None = None) -> int:
             return cli_archive(client, args.repo_name, args.unarchive, args.force)
         if args.command == "describe":
             return cli_describe(client, args.repo_name, args.description)
+        if args.command == "info":
+            return cli_info(client, args.repo_name, args.as_json)
         if args.command == "excel":
             aff = _resolve_affiliation(args.affiliation, args.include_orgs)
             return cli_excel(client, args.output, aff)

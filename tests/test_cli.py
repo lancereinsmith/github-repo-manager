@@ -71,3 +71,50 @@ def test_describe_reports_result(capsys) -> None:
 
     assert rc == 0
     assert "Updated description" in capsys.readouterr().out
+
+
+def test_info_json_output(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    from gman.details import RepoDetails
+
+    repo = make_repo("alpha")
+    details = RepoDetails(repo=repo, open_prs=2, hints={"traffic": "needs Administration: read"})
+
+    class FakeClient:
+        token = "t"
+
+        def get_repo(self, full_name):
+            return repo
+
+    monkeypatch.setattr(cli, "fetch_details", lambda c, r: details)
+    rc = cli.cli_info(FakeClient(), "octocat/alpha", as_json=True)
+
+    assert rc == 0
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["full_name"] == "octocat/alpha"
+    assert payload["open_prs"] == 2
+    assert payload["traffic"] is None
+
+
+def test_info_hints_go_to_stderr(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    from gman.details import RepoDetails
+
+    repo = make_repo("alpha")
+    details = RepoDetails(repo=repo, hints={"traffic": "needs Administration: read"})
+
+    class FakeClient:
+        def get_repo(self, full_name):
+            return repo
+
+    monkeypatch.setattr(cli, "fetch_details", lambda c, r: details)
+    cli.cli_info(FakeClient(), "octocat/alpha", as_json=True)
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)  # stdout is clean JSON
+    assert "traffic" in captured.err  # hint on stderr
+
+
+def test_parser_accepts_info() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(["info", "o/r", "--json"])
+    assert args.command == "info" and args.as_json is True
