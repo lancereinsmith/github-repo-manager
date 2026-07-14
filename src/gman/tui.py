@@ -12,12 +12,12 @@ from typing import Any, ClassVar
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import DataTable, Footer, Header, Input, Label
+from textual.widgets import DataTable, Footer, Header, Input, Label, Markdown, Static
 
 from gman.client import GitHubClient
-from gman.details import RepoDetails
+from gman.details import RepoDetails, fetch_details, render_details
 from gman.excel import DEFAULT_EXCEL_FILE, write_excel
 
 
@@ -144,6 +144,101 @@ class EditDescriptionScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class ReadmeScreen(ModalScreen[None]):
+    """Scrollable rendered-markdown view of a repo's README."""
+
+    DEFAULT_CSS = """
+    ReadmeScreen { align: center middle; }
+    #readme-box {
+        width: 90%; height: 85%;
+        border: thick $accent;
+        background: $surface;
+        padding: 0 1;
+    }
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "close", "Close")]
+
+    def __init__(self, client: GitHubClient, full_name: str) -> None:
+        super().__init__()
+        self.client = client
+        self.full_name = full_name
+
+    def compose(self) -> ComposeResult:
+        with VerticalScroll(id="readme-box"):
+            yield Markdown("*Loading README…*", id="readme")
+
+    def on_mount(self) -> None:
+        self._load()
+
+    @work(thread=True)
+    def _load(self) -> None:
+        text = self.client.get_readme(self.full_name)
+        if text is None:
+            hint = ""
+            if self.client.capabilities.resolve("contents.read") is False:
+                hint = f" — {self.client.capabilities.hint('contents.read')}"
+            text = f"*No README available{hint}*"
+        markdown = self.query_one("#readme", Markdown)
+        self.app.call_from_thread(markdown.update, text)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
+class RepoDetailScreen(ModalScreen[None]):
+    """Lazy-loaded detail panel for one repo."""
+
+    DEFAULT_CSS = """
+    RepoDetailScreen { align: center middle; }
+    #detail-box {
+        width: 90%; height: 80%;
+        border: thick $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "close", "Close"),
+        Binding("v", "view_readme", "README"),
+    ]
+
+    def __init__(
+        self,
+        client: GitHubClient,
+        repo: dict[str, Any],
+        cache: dict[tuple[str, str], RepoDetails],
+    ) -> None:
+        super().__init__()
+        self.client = client
+        self.repo = repo
+        self.cache = cache
+
+    def compose(self) -> ComposeResult:
+        with VerticalScroll(id="detail-box"):
+            yield Static(f"Loading {self.repo['full_name']}…", id="detail-content")
+
+    def on_mount(self) -> None:
+        self._load()
+
+    @work(thread=True)
+    def _load(self) -> None:
+        key = (self.repo["full_name"], self.repo.get("updated_at") or "")
+        details = self.cache.get(key)
+        if details is None:
+            details = fetch_details(self.client, self.repo)
+            self.cache[key] = details
+        content = self.query_one("#detail-content", Static)
+        self.app.call_from_thread(content.update, render_details(details))
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+    def action_view_readme(self) -> None:
+        self.app.push_screen(ReadmeScreen(self.client, self.repo["full_name"]))
+
+
 class GitHubRepoApp(App[None]):
     """Interactive table of the user's repos with delete/export actions."""
 
@@ -155,6 +250,7 @@ class GitHubRepoApp(App[None]):
         Binding("e", "export_excel", "Excel"),
         Binding("x", "open_excel", "Open xlsx"),
         Binding("o", "open_browser", "Open"),
+        Binding("i", "show_details", "Details"),
         Binding("a", "toggle_archive", "Archive/Unarchive"),
         Binding("c", "edit_description", "Change desc"),
         Binding("d", "delete_repo", "Delete"),
@@ -327,3 +423,12 @@ class GitHubRepoApp(App[None]):
             self.notify(msg)
 
         self.push_screen(EditDescriptionScreen(full, current), after)
+
+    def action_show_details(self) -> None:
+        repo = self._selected_repo()
+        if repo:
+            self.push_screen(RepoDetailScreen(self.client, repo, self.details_cache))
+
+    @on(DataTable.RowSelected)
+    def _row_selected(self, event: DataTable.RowSelected) -> None:
+        self.action_show_details()
