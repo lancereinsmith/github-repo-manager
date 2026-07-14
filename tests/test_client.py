@@ -250,3 +250,86 @@ def test_get_languages(client: GitHubClient) -> None:
 def test_get_latest_release_none_when_absent(client: GitHubClient) -> None:
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/r/releases/latest", status=404)
     assert client.get_latest_release("o/r") is None
+
+
+@responses.activate
+def test_latest_workflow_run(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/o/r/actions/runs",
+        json={"workflow_runs": [{"name": "CI", "status": "completed", "conclusion": "success"}]},
+        status=200,
+    )
+    run = client.get_latest_workflow_run("o/r")
+    assert run is not None and run["conclusion"] == "success"
+
+
+@responses.activate
+def test_latest_workflow_run_empty(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/o/r/actions/runs",
+        json={"workflow_runs": []},
+        status=200,
+    )
+    assert client.get_latest_workflow_run("o/r") is None
+
+
+@responses.activate
+def test_traffic_combines_views_and_clones(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/o/r/traffic/views",
+        json={"count": 100, "uniques": 40},
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/o/r/traffic/clones",
+        json={"count": 7, "uniques": 5},
+        status=200,
+    )
+    assert client.get_traffic("o/r") == {
+        "views": 100,
+        "unique_views": 40,
+        "clones": 7,
+        "unique_clones": 5,
+    }
+
+
+@responses.activate
+def test_traffic_denied_returns_none(client: GitHubClient) -> None:
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/r/traffic/views", status=403)
+    assert client.get_traffic("o/r") is None
+    assert client.capabilities.resolve("admin.read") is False
+
+
+@responses.activate
+def test_pr_count_via_link_header(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/o/r/pulls",
+        json=[{"number": 1}],
+        status=200,
+        headers={
+            "Link": (
+                f'<{DEFAULT_API_URL}/repos/o/r/pulls?state=open&per_page=1&page=2>; rel="next", '
+                f'<{DEFAULT_API_URL}/repos/o/r/pulls?state=open&per_page=1&page=57>; rel="last"'
+            )
+        },
+    )
+    assert client.get_open_pr_count("o/r") == 57
+
+
+@responses.activate
+def test_pr_count_no_link_header(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET, f"{DEFAULT_API_URL}/repos/o/r/pulls", json=[{"number": 1}], status=200
+    )
+    assert client.get_open_pr_count("o/r") == 1
+
+
+@responses.activate
+def test_pr_count_zero(client: GitHubClient) -> None:
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/r/pulls", json=[], status=200)
+    assert client.get_open_pr_count("o/r") == 0

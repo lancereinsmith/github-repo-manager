@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -263,3 +264,50 @@ class GitHubClient:
         """Return the latest published release, or `None` if there are none."""
         r = self._get_optional("contents.read", f"/repos/{full_name}/releases/latest")
         return r.json() if r is not None else None
+
+    def get_latest_workflow_run(self, full_name: str) -> dict[str, Any] | None:
+        """Return the most recent Actions workflow run, or `None`."""
+        r = self._get_optional(
+            "actions.read", f"/repos/{full_name}/actions/runs", params={"per_page": 1}
+        )
+        if r is None:
+            return None
+        runs = r.json().get("workflow_runs") or []
+        return runs[0] if runs else None
+
+    def get_pages_info(self, full_name: str) -> dict[str, Any] | None:
+        """Return the GitHub Pages site object, or `None` if none exists."""
+        r = self._get_optional("pages.read", f"/repos/{full_name}/pages")
+        return r.json() if r is not None else None
+
+    def get_traffic(self, full_name: str) -> dict[str, int] | None:
+        """Return 14-day traffic counters, or `None` if unavailable.
+
+        Requires push access to the repo in addition to Administration: read.
+        """
+        views = self._get_optional("admin.read", f"/repos/{full_name}/traffic/views")
+        if views is None:
+            return None
+        clones = self._get_optional("admin.read", f"/repos/{full_name}/traffic/clones")
+        if clones is None:
+            return None
+        v, c = views.json(), clones.json()
+        return {
+            "views": v.get("count", 0),
+            "unique_views": v.get("uniques", 0),
+            "clones": c.get("count", 0),
+            "unique_clones": c.get("uniques", 0),
+        }
+
+    def get_open_pr_count(self, full_name: str) -> int | None:
+        """Count open PRs using the Link-header pagination trick (1 request)."""
+        r = self._get_optional(
+            "pulls.read", f"/repos/{full_name}/pulls", params={"state": "open", "per_page": 1}
+        )
+        if r is None:
+            return None
+        body = r.json()
+        if not body:
+            return 0
+        m = re.search(r'[?&]page=(\d+)>;\s*rel="last"', r.headers.get("Link", ""))
+        return int(m.group(1)) if m else len(body)
