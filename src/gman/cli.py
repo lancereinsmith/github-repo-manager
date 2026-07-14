@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
+from gman.bulk import normalize_topics
 from gman.capabilities import ALL_FAMILIES
 from gman.client import GitHubClient, GitHubError
 from gman.details import (
@@ -48,6 +49,48 @@ FAMILY_FEATURES = {
     "delete": "delete repos",
 }
 
+_ONOFF = {"on": True, "off": False}
+
+# (flag, argparse dest, PATCH field)
+_TOGGLE_FLAGS = [
+    ("--wiki", "wiki", "has_wiki"),
+    ("--issues", "issues", "has_issues"),
+    ("--projects", "projects", "has_projects"),
+    ("--delete-branch-on-merge", "delete_branch_on_merge", "delete_branch_on_merge"),
+    ("--allow-squash", "allow_squash", "allow_squash_merge"),
+    ("--allow-merge-commit", "allow_merge_commit", "allow_merge_commit"),
+    ("--allow-rebase", "allow_rebase", "allow_rebase_merge"),
+    ("--allow-update-branch", "allow_update_branch", "allow_update_branch"),
+]
+
+# (flag, dest, PATCH field, choices)
+_ENUM_FLAGS = [
+    (
+        "--squash-commit-title",
+        "squash_commit_title",
+        "squash_merge_commit_title",
+        ["PR_TITLE", "COMMIT_OR_PR_TITLE"],
+    ),
+    (
+        "--squash-commit-message",
+        "squash_commit_message",
+        "squash_merge_commit_message",
+        ["PR_BODY", "COMMIT_MESSAGES", "BLANK"],
+    ),
+    (
+        "--merge-commit-title",
+        "merge_commit_title",
+        "merge_commit_title",
+        ["PR_TITLE", "MERGE_MESSAGE"],
+    ),
+    (
+        "--merge-commit-message",
+        "merge_commit_message",
+        "merge_commit_message",
+        ["PR_TITLE", "PR_BODY", "BLANK"],
+    ),
+]
+
 
 def _resolve_affiliation(affiliation: str, include_orgs: bool) -> str:
     """Return the API `affiliation` filter, widening it when --include-orgs is set."""
@@ -66,6 +109,44 @@ def _fetch_repos(client: GitHubClient, affiliation: str, quiet: bool) -> list[di
             affiliation=affiliation,
             progress=lambda n: status.update(f"Fetched {n} repositories…"),
         )
+
+
+def _add_field_flags(p: argparse.ArgumentParser, bulk: bool) -> None:
+    """Settings flags shared by `edit` and `bulk` (bulk omits per-repo-only flags)."""
+    p.add_argument("--homepage", help="Set the homepage URL.")
+    p.add_argument("--visibility", choices=["public", "private"])
+    if not bulk:
+        p.add_argument("--description", help="Set the description.")
+        p.add_argument("--rename", help="Rename the repo (new name).")
+        p.add_argument("--topics", help="Replace ALL topics (comma-separated).")
+    p.add_argument("--add-topic", action="append", default=[], metavar="TOPIC")
+    p.add_argument("--remove-topic", action="append", default=[], metavar="TOPIC")
+    for flag, dest, _field in _TOGGLE_FLAGS:
+        p.add_argument(flag, dest=dest, choices=["on", "off"])
+    for flag, dest, _field, choices in _ENUM_FLAGS:
+        p.add_argument(flag, dest=dest, choices=choices)
+
+
+def build_edit_fields(args: argparse.Namespace) -> dict[str, Any]:
+    """Map parsed edit/bulk flags to PATCH fields. Pure, testable."""
+    fields: dict[str, Any] = {}
+    if getattr(args, "description", None) is not None:
+        fields["description"] = args.description
+    if args.homepage is not None:
+        fields["homepage"] = args.homepage
+    if getattr(args, "rename", None):
+        fields["name"] = args.rename
+    if args.visibility:
+        fields["visibility"] = args.visibility
+    for _flag, dest, field_name in _TOGGLE_FLAGS:
+        value = getattr(args, dest)
+        if value is not None:
+            fields[field_name] = _ONOFF[value]
+    for _flag, dest, field_name, _choices in _ENUM_FLAGS:
+        value = getattr(args, dest)
+        if value is not None:
+            fields[field_name] = value
+    return fields
 
 
 def cli_list(client: GitHubClient, detailed: bool, as_json: bool, affiliation: str) -> int:
@@ -182,6 +263,53 @@ def cli_tui(client: GitHubClient) -> int:
     return 0
 
 
+def cli_edit(client: GitHubClient, args: argparse.Namespace) -> int:
+    full = args.repo_name
+    if args.topics is not None and (args.add_topic or args.remove_topic):
+        print(
+            "Error: --topics cannot be combined with --add-topic/--remove-topic.",
+            file=sys.stderr,
+        )
+        return 2
+    fields = build_edit_fields(args)
+    wants_topics = args.topics is not None or args.add_topic or args.remove_topic
+    if not fields and not wants_topics:
+        print(
+            "Error: nothing to change — pass at least one flag (see gman edit --help).",
+            file=sys.stderr,
+        )
+        return 2
+
+    all_ok = True
+    if fields:
+        ok, msg = client.update_repo(full, fields)
+        print(("✅ " if ok else "❌ ") + msg)
+        all_ok = all_ok and ok
+
+    if wants_topics:
+        if args.topics is not None:
+            topics, errors = normalize_topics(args.topics)
+        else:
+            repo = client.get_repo(full)
+            topics = list(repo.get("topics") or [])
+            added, errors = normalize_topics(",".join(args.add_topic))
+            for t in added:
+                if t not in topics:
+                    topics.append(t)
+            removed, rerrs = normalize_topics(",".join(args.remove_topic))
+            errors += rerrs
+            topics = [t for t in topics if t not in removed]
+        if errors:
+            for e in errors:
+                print(f"Error: {e}", file=sys.stderr)
+            return 2
+        ok, msg = client.set_topics(full, topics)
+        print(("✅ " if ok else "❌ ") + msg)
+        all_ok = all_ok and ok
+
+    return 0 if all_ok else 1
+
+
 def cli_auth(client: GitHubClient, probe: bool) -> int:
     login = client.whoami()  # also captures X-OAuth-Scopes on the first response
     if login is None:
@@ -258,6 +386,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_desc.add_argument("repo_name", help="username/repo")
     p_desc.add_argument("description", help="New description (empty string clears it).")
 
+    p_edit = sub.add_parser("edit", help="Edit repo settings and metadata.")
+    p_edit.add_argument("repo_name", help="username/repo")
+    _add_field_flags(p_edit, bulk=False)
+
     p_info = sub.add_parser("info", help="Show detailed info for one repo.")
     p_info.add_argument("repo_name", help="username/repo")
     p_info.add_argument("--json", dest="as_json", action="store_true")
@@ -297,6 +429,8 @@ def main(argv: list[str] | None = None) -> int:
             return cli_archive(client, args.repo_name, args.unarchive, args.force)
         if args.command == "describe":
             return cli_describe(client, args.repo_name, args.description)
+        if args.command == "edit":
+            return cli_edit(client, args)
         if args.command == "info":
             return cli_info(client, args.repo_name, args.as_json)
         if args.command == "auth":

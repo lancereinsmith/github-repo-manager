@@ -243,3 +243,84 @@ def test_delete_backup_success_then_delete(
     assert rc == 0
     assert deleted == ["octocat/r"]
     assert "Backed up" in capsys.readouterr().out
+
+
+def test_build_edit_fields_maps_flags() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        [
+            "edit",
+            "o/r",
+            "--homepage",
+            "https://x.example",
+            "--visibility",
+            "private",
+            "--rename",
+            "newname",
+            "--wiki",
+            "off",
+            "--delete-branch-on-merge",
+            "on",
+            "--allow-rebase",
+            "off",
+            "--squash-commit-title",
+            "PR_TITLE",
+        ]
+    )
+    assert cli.build_edit_fields(args) == {
+        "homepage": "https://x.example",
+        "visibility": "private",
+        "name": "newname",
+        "has_wiki": False,
+        "delete_branch_on_merge": True,
+        "allow_rebase_merge": False,
+        "squash_merge_commit_title": "PR_TITLE",
+    }
+
+
+def test_edit_no_flags_errors(capsys) -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(["edit", "o/r"])
+
+    class FakeClient:
+        pass
+
+    rc = cli.cli_edit(FakeClient(), args)
+    assert rc == 2
+    assert "nothing to change" in capsys.readouterr().err
+
+
+def test_edit_fields_and_add_topic(capsys) -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(["edit", "octocat/r", "--wiki", "off", "--add-topic", "NewTopic"])
+    calls: list = []
+
+    class FakeClient:
+        def update_repo(self, full, fields):
+            calls.append(("patch", full, fields))
+            return True, f"Updated {full}"
+
+        def get_repo(self, full):
+            return make_repo("r", topics=["old"])
+
+        def set_topics(self, full, topics):
+            calls.append(("topics", full, topics))
+            return True, f"Set {len(topics)} topics on {full}"
+
+    rc = cli.cli_edit(FakeClient(), args)
+
+    assert rc == 0
+    assert ("patch", "octocat/r", {"has_wiki": False}) in calls
+    assert ("topics", "octocat/r", ["old", "newtopic"]) in calls
+
+
+def test_edit_topics_conflict_errors(capsys) -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(["edit", "o/r", "--topics", "a,b", "--add-topic", "c"])
+
+    class FakeClient:
+        pass
+
+    rc = cli.cli_edit(FakeClient(), args)
+    assert rc == 2
+    assert "cannot be combined" in capsys.readouterr().err
