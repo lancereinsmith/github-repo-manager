@@ -154,6 +154,44 @@ class GitHubClient:
             return r
         return None
 
+    def _mutate(
+        self,
+        method: str,
+        path: str,
+        *,
+        ok_codes: tuple[int, ...],
+        success_msg: str,
+        family: str = "admin.write",
+        json: dict[str, Any] | None = None,
+    ) -> tuple[bool, str]:
+        """Perform a write request, feeding the capability cache.
+
+        Returns `(ok, message)`. `RateLimitError` propagates so bulk runs can
+        abort; other `GitHubError`s become `(False, message)`.
+        """
+        try:
+            r = self._request(method, path, json=json)
+        except RateLimitError:
+            raise
+        except GitHubError as e:
+            return False, str(e)
+        if r.status_code == 403:
+            self.capabilities.mark(family, False)
+        if r.status_code in ok_codes:
+            self.capabilities.mark(family, True)
+            return True, success_msg
+        return False, f"HTTP {r.status_code}: {r.text[:160]}"
+
+    def update_repo(self, full_name: str, fields: dict[str, Any]) -> tuple[bool, str]:
+        """Update repository settings via a single PATCH. Returns `(ok, message)`."""
+        return self._mutate(
+            "PATCH",
+            f"/repos/{full_name}",
+            ok_codes=(200,),
+            success_msg=f"Updated {full_name}",
+            json=fields,
+        )
+
     def whoami(self) -> str | None:
         """Return the authenticated user's login, or `None` on failure."""
         try:
@@ -211,34 +249,24 @@ class GitHubClient:
 
     def delete_repo(self, full_name: str) -> tuple[bool, str]:
         """Delete a repository. Returns `(ok, message)`."""
-        try:
-            r = self._request("DELETE", f"/repos/{full_name}")
-        except GitHubError as e:
-            return False, str(e)
-        if r.status_code == 204:
-            return True, f"Deleted {full_name}"
-        return False, f"HTTP {r.status_code}: {r.text[:160]}"
+        return self._mutate(
+            "DELETE",
+            f"/repos/{full_name}",
+            ok_codes=(204,),
+            success_msg=f"Deleted {full_name}",
+            family="delete",
+        )
 
     def set_archived(self, full_name: str, archived: bool) -> tuple[bool, str]:
         """Archive or unarchive a repository. Returns `(ok, message)`."""
-        try:
-            r = self._request("PATCH", f"/repos/{full_name}", json={"archived": archived})
-        except GitHubError as e:
-            return False, str(e)
         verb = "Archived" if archived else "Unarchived"
-        if r.status_code == 200:
-            return True, f"{verb} {full_name}"
-        return False, f"HTTP {r.status_code}: {r.text[:160]}"
+        ok, msg = self.update_repo(full_name, {"archived": archived})
+        return (True, f"{verb} {full_name}") if ok else (False, msg)
 
     def set_description(self, full_name: str, description: str) -> tuple[bool, str]:
         """Update a repository's description. Returns `(ok, message)`."""
-        try:
-            r = self._request("PATCH", f"/repos/{full_name}", json={"description": description})
-        except GitHubError as e:
-            return False, str(e)
-        if r.status_code == 200:
-            return True, f"Updated description for {full_name}"
-        return False, f"HTTP {r.status_code}: {r.text[:160]}"
+        ok, msg = self.update_repo(full_name, {"description": description})
+        return (True, f"Updated description for {full_name}") if ok else (False, msg)
 
     def get_repo(self, full_name: str) -> dict[str, Any]:
         """Fetch a single repository object. Raises `GitHubError` on failure."""

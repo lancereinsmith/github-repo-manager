@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json as jsonlib
 from pathlib import Path
 
 import pytest
@@ -421,3 +422,54 @@ def test_pinned_repos_rate_limit_is_empty_set(client: GitHubClient) -> None:
         headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1893456000"},
     )
     assert client.get_pinned_repos() == set()
+
+
+@responses.activate
+def test_update_repo_patches_fields(client: GitHubClient) -> None:
+    responses.add(responses.PATCH, f"{DEFAULT_API_URL}/repos/o/r", json={}, status=200)
+
+    ok, msg = client.update_repo("o/r", {"homepage": "https://x.example", "has_wiki": False})
+
+    assert ok and msg == "Updated o/r"
+    body = jsonlib.loads(responses.calls[0].request.body)
+    assert body == {"homepage": "https://x.example", "has_wiki": False}
+    assert client.capabilities.resolve("admin.write") is True
+
+
+@responses.activate
+def test_update_repo_403_marks_admin_write_denied(client: GitHubClient) -> None:
+    responses.add(
+        responses.PATCH,
+        f"{DEFAULT_API_URL}/repos/o/r",
+        json={"message": "forbidden"},
+        status=403,
+    )
+
+    ok, msg = client.update_repo("o/r", {"has_wiki": False})
+
+    assert not ok and "403" in msg
+    assert client.capabilities.resolve("admin.write") is False
+
+
+@responses.activate
+def test_mutate_rate_limit_propagates(client: GitHubClient) -> None:
+    responses.add(
+        responses.PATCH,
+        f"{DEFAULT_API_URL}/repos/o/r",
+        json={"message": "rate limited"},
+        status=403,
+        headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1893456000"},
+    )
+
+    with pytest.raises(RateLimitError):
+        client.update_repo("o/r", {"has_wiki": False})
+
+
+@responses.activate
+def test_delete_repo_marks_delete_family(client: GitHubClient) -> None:
+    responses.add(responses.DELETE, f"{DEFAULT_API_URL}/repos/octocat/x", status=204)
+
+    ok, _ = client.delete_repo("octocat/x")
+
+    assert ok
+    assert client.capabilities.resolve("delete") is True
