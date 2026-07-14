@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from gman.client import GitHubClient
+from gman.client import GitHubClient, RateLimitError
 
 _TOPIC_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,49}$")
 MAX_TOPICS = 20
@@ -156,3 +156,42 @@ def build_menu_op(key: str, arg: str | None = None) -> BulkOp:
             raise ValueError(f"{key} requires a topic argument")
         return add_topic_op(arg) if key == "add_topic" else remove_topic_op(arg)
     raise ValueError(f"unknown bulk op {key!r}")
+
+
+def run_bulk(
+    client: GitHubClient,
+    repos: list[dict[str, Any]],
+    ops: list[BulkOp],
+    progress: Callable[[int, int], None] | None = None,
+) -> list[BulkResult]:
+    """Apply each op to each repo, strictly sequentially.
+
+    GitHub's secondary rate limits punish concurrent writes — never
+    parallelize this. Per-op failures are recorded and the run continues; a
+    `RateLimitError` aborts the run and the remaining pairs are recorded as
+    `skipped=True` with the rate-limit message.
+    """
+    if not repos or not ops:
+        return []
+    results: list[BulkResult] = []
+    aborted_msg: str | None = None
+    total = len(repos)
+    for done, repo in enumerate(repos, start=1):
+        for op in ops:
+            if aborted_msg is not None:
+                results.append(
+                    BulkResult(repo["full_name"], op.label, False, aborted_msg, skipped=True)
+                )
+                continue
+            try:
+                ok, msg = op.apply(client, repo)
+            except RateLimitError as e:
+                aborted_msg = str(e)
+                results.append(
+                    BulkResult(repo["full_name"], op.label, False, aborted_msg, skipped=True)
+                )
+                continue
+            results.append(BulkResult(repo["full_name"], op.label, ok, msg))
+        if progress is not None:
+            progress(done, total)
+    return results
