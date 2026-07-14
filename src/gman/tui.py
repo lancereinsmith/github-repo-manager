@@ -15,8 +15,20 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Checkbox, DataTable, Footer, Header, Input, Label, Markdown, Static
+from textual.widgets import (
+    Checkbox,
+    DataTable,
+    Footer,
+    Header,
+    Input,
+    Label,
+    Markdown,
+    OptionList,
+    Static,
+)
+from textual.widgets.option_list import Option
 
+from gman.bulk import TUI_BULK_MENU, BulkOp, build_menu_op, normalize_topics, run_bulk
 from gman.client import GitHubClient, GitHubError
 from gman.details import (
     RepoDetails,
@@ -211,6 +223,123 @@ class ReadmeScreen(ModalScreen[None]):
         self.dismiss(None)
 
 
+class TopicInputScreen(ModalScreen[str | None]):
+    """Prompt for a single topic name; returns the validated topic or None."""
+
+    DEFAULT_CSS = """
+    TopicInputScreen { align: center middle; }
+    #topicdialog {
+        width: 60; height: auto;
+        border: thick $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="topicdialog"):
+            yield Label("Topic name (esc to cancel):")
+            yield Input(placeholder="e.g. python", id="topic")
+
+    @on(Input.Submitted)
+    def _submit(self, event: Input.Submitted) -> None:
+        valid, errors = normalize_topics(event.value)
+        if errors or len(valid) != 1:
+            self.app.notify("Enter exactly one valid topic.", severity="error")
+            self.dismiss(None)
+            return
+        self.dismiss(valid[0])
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class BulkMenuScreen(ModalScreen[tuple[str, str | None] | None]):
+    """Pick a bulk operation; returns (menu key, topic arg) or None."""
+
+    DEFAULT_CSS = """
+    BulkMenuScreen { align: center middle; }
+    #bulkmenu {
+        width: 50; height: auto; max-height: 80%;
+        border: thick $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, count: int) -> None:
+        super().__init__()
+        self.count = count
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="bulkmenu"):
+            yield Label(f"Bulk action for {self.count} selected repos:")
+            yield OptionList(
+                *[Option(label, id=key) for key, label, _needs in TUI_BULK_MENU], id="ops"
+            )
+
+    @on(OptionList.OptionSelected)
+    def _selected(self, event: OptionList.OptionSelected) -> None:
+        key = event.option.id or ""
+        needs_topic = next(needs for k, _label, needs in TUI_BULK_MENU if k == key)
+        if not needs_topic:
+            self.dismiss((key, None))
+            return
+
+        def after_topic(topic: str | None) -> None:
+            self.dismiss(None if topic is None else (key, topic))
+
+        self.app.push_screen(TopicInputScreen(), after_topic)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class ConfirmBulkScreen(ModalScreen[bool]):
+    """Confirm a bulk operation. No Input widget, so letter bindings are safe."""
+
+    DEFAULT_CSS = """
+    ConfirmBulkScreen { align: center middle; }
+    #bulkconfirm {
+        width: 70; height: auto;
+        border: thick $warning;
+        background: $surface;
+        padding: 1 2;
+    }
+    #bctitle { text-style: bold; }
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("y", "confirm", "Yes"),
+        Binding("n", "cancel", "No"),
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, label: str, names: list[str]) -> None:
+        super().__init__()
+        self.label = label
+        self.names = names
+
+    def compose(self) -> ComposeResult:
+        preview = ", ".join(self.names[:5])
+        if len(self.names) > 5:
+            preview += f" … +{len(self.names) - 5} more"
+        with Vertical(id="bulkconfirm"):
+            yield Label(escape(self.label), id="bctitle")
+            yield Label(f"{len(self.names)} repos: {escape(preview)}")
+            yield Label("Press y to proceed, n or esc to cancel.")
+
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+
 class RepoDetailScreen(ModalScreen[None]):
     """Lazy-loaded detail panel for one repo."""
 
@@ -282,6 +411,7 @@ class GitHubRepoApp(App[None]):
         Binding("slash", "filter", "Filter"),
         Binding("space", "toggle_select", "Select"),
         Binding("ctrl+a", "toggle_select_all", "Select all"),
+        Binding("b", "bulk_menu", "Bulk"),
     ]
 
     def __init__(self, client: GitHubClient) -> None:
@@ -496,3 +626,45 @@ class GitHubRepoApp(App[None]):
     @on(DataTable.RowSelected)
     def _row_selected(self, event: DataTable.RowSelected) -> None:
         self.action_show_details()
+
+    def action_bulk_menu(self) -> None:
+        if self.client.capabilities.resolve("admin.write") is False:
+            hint = self.client.capabilities.hint("admin.write")
+            self.notify(f"Token cannot write — {hint}", severity="error")
+            return
+        if not self.selected:
+            self.notify("Nothing selected — press space to select repos.", severity="warning")
+            return
+
+        def after_menu(result: tuple[str, str | None] | None) -> None:
+            if not result:
+                return
+            key, arg = result
+            op = build_menu_op(key, arg)
+            targets = [r for r in self.all_repos if r["full_name"] in self.selected]
+            names = [r["full_name"] for r in targets]
+
+            def after_confirm(confirmed: bool | None) -> None:
+                if confirmed:
+                    self._bulk_worker(targets, op)
+
+            self.push_screen(ConfirmBulkScreen(op.label, names), after_confirm)
+
+        self.push_screen(BulkMenuScreen(len(self.selected)), after_menu)
+
+    @work(thread=True)
+    def _bulk_worker(self, targets: list[dict[str, Any]], op: BulkOp) -> None:
+        def progress(done: int, total: int) -> None:
+            self.call_from_thread(setattr, self, "sub_title", f"bulk {done}/{total}…")
+
+        results = run_bulk(self.client, targets, [op], progress=progress)
+        ok = sum(1 for r in results if r.ok)
+        failed = sum(1 for r in results if not r.ok and not r.skipped)
+        skipped = sum(1 for r in results if r.skipped)
+        summary = f"{op.label}: {ok} ok, {failed} failed"
+        if skipped:
+            summary += f", {skipped} skipped (rate limit)"
+        severity = "error" if failed or skipped else "information"
+        self.call_from_thread(self.notify, summary, severity=severity)
+        self.call_from_thread(self.selected.clear)
+        self.call_from_thread(self.load_repos)
