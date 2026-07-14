@@ -160,3 +160,70 @@ def test_parser_accepts_auth() -> None:
     parser = cli.build_parser()
     args = parser.parse_args(["auth", "--probe"])
     assert args.command == "auth" and args.probe is True
+
+
+def test_delete_prints_warnings(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    repo = make_repo("r", forks_count=3, private=False)
+
+    class FakeClient:
+        def get_repo(self, full_name):
+            return repo
+
+        def get_pinned_repos(self):
+            return set()
+
+        def delete_repo(self, full_name):
+            return True, f"Deleted {full_name}"
+
+    monkeypatch.setattr("builtins.input", lambda _prompt: "octocat/r")
+    rc = cli.cli_delete(FakeClient(), "octocat/r", force=False)
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "3 forks" in out
+    assert "public" in out
+
+
+def test_delete_backup_failure_aborts(monkeypatch: pytest.MonkeyPatch, capsys, tmp_path) -> None:
+    from gman.client import GitHubError
+
+    deleted = []
+
+    class FakeClient:
+        def get_repo(self, full_name):
+            return make_repo("r")
+
+        def delete_repo(self, full_name):
+            deleted.append(full_name)
+            return True, "Deleted"
+
+    def boom(client, repo, dest_dir):
+        raise GitHubError("Tarball download failed: HTTP 500")
+
+    monkeypatch.setattr(cli, "backup_repo", boom)
+    with pytest.raises(GitHubError):
+        cli.cli_delete(FakeClient(), "octocat/r", force=True, backup=True, backup_dir=str(tmp_path))
+    assert deleted == []  # deletion never attempted
+
+
+def test_delete_backup_success_then_delete(
+    monkeypatch: pytest.MonkeyPatch, capsys, tmp_path
+) -> None:
+    deleted = []
+
+    class FakeClient:
+        def get_repo(self, full_name):
+            return make_repo("r")
+
+        def delete_repo(self, full_name):
+            deleted.append(full_name)
+            return True, f"Deleted {full_name}"
+
+    monkeypatch.setattr(cli, "backup_repo", lambda c, r, d: d / "r-main.tar.gz")
+    rc = cli.cli_delete(
+        FakeClient(), "octocat/r", force=True, backup=True, backup_dir=str(tmp_path)
+    )
+
+    assert rc == 0
+    assert deleted == ["octocat/r"]
+    assert "Backed up" in capsys.readouterr().out

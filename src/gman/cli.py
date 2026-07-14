@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Any
 
 from rich.console import Console
@@ -12,7 +13,14 @@ from rich.table import Table
 
 from gman.capabilities import ALL_FAMILIES
 from gman.client import GitHubClient, GitHubError
-from gman.details import details_to_dict, fetch_details, probe_capabilities, render_details
+from gman.details import (
+    backup_repo,
+    build_delete_warnings,
+    details_to_dict,
+    fetch_details,
+    probe_capabilities,
+    render_details,
+)
 from gman.excel import DEFAULT_EXCEL_FILE, write_excel
 
 _JSON_FIELDS = (
@@ -96,12 +104,30 @@ def cli_list(client: GitHubClient, detailed: bool, as_json: bool, affiliation: s
     return 0
 
 
-def cli_delete(client: GitHubClient, full_name: str, force: bool) -> int:
+def cli_delete(
+    client: GitHubClient,
+    full_name: str,
+    force: bool,
+    backup: bool = False,
+    backup_dir: str = ".",
+) -> int:
+    repo: dict[str, Any] | None = None
     if not force:
+        try:
+            repo = client.get_repo(full_name)
+            for warning in build_delete_warnings(repo, client.get_pinned_repos()):
+                print(warning)
+        except GitHubError as e:
+            print(f"Warning lookup failed: {e}", file=sys.stderr)
         confirm = input(f"Type '{full_name}' to confirm deletion: ").strip()
         if confirm != full_name:
             print("Cancelled.")
             return 1
+    if backup:
+        if repo is None:
+            repo = client.get_repo(full_name)
+        path = backup_repo(client, repo, Path(backup_dir))
+        print(f"Backed up to {path}")
     ok, msg = client.delete_repo(full_name)
     print(("✅ " if ok else "❌ ") + msg)
     return 0 if ok else 1
@@ -219,6 +245,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_del = sub.add_parser("delete", help="Delete a repo.")
     p_del.add_argument("repo_name", help="username/repo")
     p_del.add_argument("--force", "-f", action="store_true")
+    p_del.add_argument("--backup", action="store_true", help="Download a tarball before deleting.")
+    p_del.add_argument("--backup-dir", default=".", help="Directory for the backup tarball.")
 
     p_arch = sub.add_parser("archive", help="Archive (or unarchive) a repo.")
     p_arch.add_argument("repo_name", help="username/repo")
@@ -263,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
             aff = _resolve_affiliation(args.affiliation, args.include_orgs)
             return cli_list(client, args.detailed, args.as_json, aff)
         if args.command == "delete":
-            return cli_delete(client, args.repo_name, args.force)
+            return cli_delete(client, args.repo_name, args.force, args.backup, args.backup_dir)
         if args.command == "archive":
             return cli_archive(client, args.repo_name, args.unarchive, args.force)
         if args.command == "describe":
