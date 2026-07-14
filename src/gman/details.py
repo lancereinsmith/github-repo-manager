@@ -118,7 +118,8 @@ def probe_capabilities(client: GitHubClient) -> None:
         "/user/repos",
         params={"per_page": 1, "sort": "updated", "affiliation": "owner"},
     )
-    r.raise_for_status()
+    if r.status_code != 200:
+        return
     batch = r.json()
     if not batch:
         return

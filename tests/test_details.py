@@ -15,6 +15,7 @@ from gman.details import (
     build_delete_warnings,
     details_to_dict,
     fetch_details,
+    probe_capabilities,
     render_details,
     unique_path,
 )
@@ -79,6 +80,10 @@ def test_fetch_details_degrades_per_field(client: GitHubClient) -> None:
     assert details.latest_run is None and "latest_run" in details.hints  # denied → hinted
     assert details.open_prs == 0
     assert details.open_issues == 0
+    # traffic denied (admin.read) → None + hinted
+    assert details.traffic is None and "traffic" in details.hints
+    # pages absent (404 = true absence) → None WITHOUT hint
+    assert details.pages is None and "pages" not in details.hints
 
 
 @responses.activate
@@ -107,3 +112,34 @@ def test_render_and_dict_shapes() -> None:
     assert d["full_name"] == "octocat/r"
     assert d["traffic"] is None
     assert d["open_prs"] == 1
+
+
+@responses.activate
+def test_probe_capabilities_marks_read_families(client: GitHubClient) -> None:
+    full = "octocat/newest"
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/user/repos",
+        json=[make_repo("newest")],
+        status=200,
+    )
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/readme", body="# x", status=200)
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/actions/runs", status=403)
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/pages", status=404)
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/traffic/views", status=403)
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/pulls", json=[], status=200)
+
+    probe_capabilities(client)
+
+    caps = client.capabilities
+    assert caps.resolve("contents.read") is True
+    assert caps.resolve("actions.read") is False
+    assert caps.resolve("pages.read") is True  # 404 = authz passed
+    assert caps.resolve("admin.read") is False
+    assert caps.resolve("pulls.read") is True
+
+
+@responses.activate
+def test_probe_capabilities_silent_on_failure(client: GitHubClient) -> None:
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/user/repos", status=401)
+    probe_capabilities(client)  # must not raise
