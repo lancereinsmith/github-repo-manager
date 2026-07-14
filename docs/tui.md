@@ -20,9 +20,11 @@ your repos.
 | `e` | Export the current list to `github_repos.xlsx` |
 | `x` | Open `github_repos.xlsx` in your default spreadsheet app |
 | `o` | Open the selected repo in your browser |
+| `i` / `Enter` | Open the detail panel (languages, release, CI, traffic, …) |
 | `a` | Archive the selected repo, or unarchive it if already archived |
 | `c` | Change the description of the selected repo |
 | `d` | Delete the selected repo (modal asks you to retype the full name) |
+| `v` (in detail panel) | View the rendered README |
 | `/` | Open a filter prompt (substring match on name and description) |
 
 The filter is purely client-side; it narrows what's shown but does not
@@ -52,3 +54,15 @@ previous value.
 A text input pre-populated with the current description. Submit to send
 the new value to GitHub via PATCH; submit empty to clear the description.
 `Esc` cancels without making a request.
+
+### Detail panel
+
+`Enter` or `i` opens a lazy-loaded panel for the selected repo. Each row is
+fetched independently — fields your token can't access show `—` with a hint
+instead of failing. Results are cached until the repo changes or you refresh.
+
+### Delete confirmation extras
+
+The delete modal lists safety warnings (forks, stars, public, pinned) and has
+a "Backup tarball first" checkbox. If the backup download fails, the deletion
+is aborted.

@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `info` command and TUI detail panel (`i`/Enter): languages, latest release,
+  CI status, Pages URL, 14-day traffic, open issue/PR split — each field
+  degrades gracefully when the token lacks its permission.
+- `auth` command showing token type, classic scopes, and per-feature
+  availability (`--probe` resolves unknowns for fine-grained tokens).
+- Deletion safety net: warnings for forks/stars/public/pinned repos, README
+  viewer in the TUI, and `delete --backup` / a backup checkbox that downloads
+  a tarball first and aborts deletion if the download fails.
+- Capability model: classic-token scope introspection and fine-grained-token
+  403 learning power graceful degradation everywhere.
+- `Open` column (open issues + PRs) and 📌 pinned badges in the TUI table.
+- New docs page: *Choosing a token* with least-privilege PAT recipes.
+
 ## [0.1.0] - 2026-07-14
 
 Initial release.

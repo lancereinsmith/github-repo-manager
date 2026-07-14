@@ -49,6 +49,29 @@ gman describe username/project "A short, useful tagline"
 gman describe username/project ""
 ```
 
+## `info`
+
+Show a detail panel for one repo: languages, latest release, CI status,
+Pages URL, 14-day traffic, and the open issue/PR split.
+
+```bash
+gman info username/project
+gman info username/project --json   # hints about unavailable fields go to stderr
+```
+
+Fields the token can't see render as `—` with a hint (see
+[Choosing a token](tokens.md)).
+
+## `auth`
+
+Show what gman knows about your token: source, type, classic scopes, and a
+feature-availability table.
+
+```bash
+gman auth
+gman auth --probe   # resolve unknowns with one cheap read per permission family
+```
+
 ## `delete`
 
 Delete a repo by full name. You'll be prompted to retype the name unless
@@ -58,6 +81,17 @@ Delete a repo by full name. You'll be prompted to retype the name unless
 gman delete username/old-project
 gman delete username/old-project --force
 ```
+
+`--backup` downloads a `{name}-{branch}.tar.gz` snapshot (git contents only — no
+issues/wiki/releases) before deleting; if the download fails, the deletion is
+aborted. `--backup-dir` chooses where it lands (default: current directory).
+
+```bash
+gman delete username/old-project --backup --backup-dir ~/Backups
+```
+
+Before the confirmation prompt, gman warns if the repo has forks or stars, is
+public, or is pinned on your profile.
 
 !!! warning
     Deletion is permanent. Even with `--force` there is no recycle bin.

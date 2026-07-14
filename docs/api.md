@@ -56,3 +56,29 @@ Takes a list of repo dicts (the shape returned by `list_repos`) and writes
 the formatted spreadsheet described on the [Excel export](excel.md) page.
 Values that begin with a formula character (`= + - @`) are escaped so
 spreadsheet applications treat them as text, not formulas.
+
+## Detail helpers
+
+```python
+client.get_repo("o/r")               # repo object (raises GitHubError)
+client.get_readme("o/r")             # raw markdown or None
+client.get_languages("o/r")          # {"Python": 12345} or None
+client.get_latest_release("o/r")     # release object or None
+client.get_latest_workflow_run("o/r")
+client.get_pages_info("o/r")
+client.get_traffic("o/r")            # needs push access + admin read
+client.get_open_pr_count("o/r")      # Link-header trick: 1 request
+client.get_pinned_repos()            # set of "owner/name"; empty on failure
+client.download_tarball("o/r", "main", Path("backup.tar.gz"))
+```
+
+Read helpers return `None` when the resource is absent (404) **or** the token
+lacks the permission (403). Check `client.capabilities.resolve(family)` to
+distinguish: `False` means denied, `True` means it was truly absent.
+
+```python
+from gman.details import fetch_details
+
+details = fetch_details(client, repo)   # concurrent, per-field degradation
+details.open_issues, details.open_prs, details.hints
+```
