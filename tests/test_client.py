@@ -392,3 +392,32 @@ def test_pinned_repos_failure_is_empty_set(client: GitHubClient) -> None:
 
     responses.add(responses.POST, f"{DEFAULT_API_URL}/graphql", status=403)
     assert client.get_pinned_repos() == set()
+
+
+@responses.activate
+def test_pinned_repos_null_nodes_is_empty_set(client: GitHubClient) -> None:
+    responses.add(
+        responses.POST,
+        f"{DEFAULT_API_URL}/graphql",
+        json={"data": {"viewer": {"pinnedItems": {"nodes": None}}}},
+        status=200,
+    )
+    assert client.get_pinned_repos() == set()
+
+
+@responses.activate
+def test_pinned_repos_non_json_body_is_empty_set(client: GitHubClient) -> None:
+    responses.add(responses.POST, f"{DEFAULT_API_URL}/graphql", body="not json", status=200)
+    assert client.get_pinned_repos() == set()
+
+
+@responses.activate
+def test_pinned_repos_rate_limit_is_empty_set(client: GitHubClient) -> None:
+    responses.add(
+        responses.POST,
+        f"{DEFAULT_API_URL}/graphql",
+        json={"message": "rate limited"},
+        status=403,
+        headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1893456000"},
+    )
+    assert client.get_pinned_repos() == set()

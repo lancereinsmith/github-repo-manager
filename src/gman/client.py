@@ -338,15 +338,12 @@ class GitHubClient:
         """Return `nameWithOwner` for the user's pinned repos; empty set on any failure."""
         try:
             r = self._request("POST", "/graphql", json={"query": self._PINNED_QUERY})
-        except GitHubError:
-            return set()
-        if r.status_code != 200:
-            return set()
-        body = r.json()
-        if "errors" in body:
-            return set()
-        try:
+            if r.status_code != 200:
+                return set()
+            body = r.json()
+            if not isinstance(body, dict) or "errors" in body:
+                return set()
             nodes = body["data"]["viewer"]["pinnedItems"]["nodes"]
-        except (KeyError, TypeError):
+            return {n["nameWithOwner"] for n in nodes if n and "nameWithOwner" in n}
+        except (GitHubError, ValueError, KeyError, TypeError):
             return set()
-        return {n["nameWithOwner"] for n in nodes if n and "nameWithOwner" in n}
