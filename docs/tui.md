@@ -7,7 +7,7 @@ your repos.
 
 - **Header** — app title and a sub-title showing `username — visible/total`
   plus the current filter, if any
-- **Table** — seven columns: Name, Vis. (🔒/🌐), Description, Lang,
+- **Table** — eight columns: ✓ (selection), Name, Vis. (🔒/🌐), Description, Lang,
   Stars, Open (open issues + PRs), Updated
 - **Footer** — keybinding hints
 
@@ -23,6 +23,11 @@ your repos.
 | `i` / `Enter` | Open the detail panel (languages, release, CI, traffic, …) |
 | `a` | Archive the selected repo, or unarchive it if already archived |
 | `c` | Change the description of the selected repo |
+| `t` | Edit the selected repo's topics |
+| `h` | Edit the selected repo's homepage URL |
+| `space` | Select/deselect the current repo (for bulk actions) |
+| `ctrl+a` | Select all visible repos (again to deselect) |
+| `b` | Bulk-action menu for the selected repos |
 | `d` | Delete the selected repo (modal asks you to retype the full name) |
 | `v` (in detail panel) | View the rendered README |
 | `/` | Open a filter prompt (substring match on name and description) |
@@ -66,3 +71,12 @@ instead of failing. Results are cached until the repo changes or you refresh.
 The delete modal lists safety warnings (forks, stars, public, pinned) and has
 a "Backup tarball first" checkbox. If the backup download fails, the deletion
 is aborted.
+
+### Bulk actions
+
+`space` marks repos (✓ column); the subtitle shows the count. `b` opens the
+bulk menu — archive/unarchive, feature toggles, delete-branch-on-merge,
+add/remove a topic, and Dependabot alert/fix toggles. A confirmation screen
+shows the operation and target list (`y` to proceed). Operations run one repo
+at a time; the subtitle tracks progress and a notification summarizes
+ok/failed/skipped. The list refreshes when done.

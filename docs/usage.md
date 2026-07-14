@@ -1,7 +1,7 @@
 # Usage
 
 ```bash
-gman [--token TOKEN] [--api-url URL] {list,delete,archive,describe,excel,tui} [...]
+gman [--token TOKEN] [--api-url URL] {list,delete,archive,describe,edit,bulk,info,auth,excel,tui} [...]
 ```
 
 If `--token` is omitted, `GITHUB_TOKEN` is used; failing that, the token
@@ -71,6 +71,50 @@ feature-availability table.
 gman auth
 gman auth --probe   # resolve unknowns with one cheap read per permission family
 ```
+
+## `edit`
+
+Change settings and metadata on one repo — all field flags are combined into
+a single API call (topics go through their own endpoint).
+
+```bash
+gman edit username/project --homepage https://example.com --wiki off
+gman edit username/project --rename new-name --visibility private
+gman edit username/project --topics python,cli        # replace all topics
+gman edit username/project --add-topic tui --remove-topic wip
+gman edit username/project --delete-branch-on-merge on --allow-rebase off
+```
+
+Flags: `--description`, `--homepage`, `--rename`, `--visibility
+{public,private}`, `--topics` (replace) or repeatable
+`--add-topic`/`--remove-topic`, `--wiki/--issues/--projects {on,off}`,
+`--delete-branch-on-merge {on,off}`,
+`--allow-squash/--allow-merge-commit/--allow-rebase/--allow-update-branch
+{on,off}`, and the squash/merge commit title/message defaults
+(`--squash-commit-title` …). All writes need `Administration: write`
+(fine-grained) or the `repo` scope (classic) — see
+[Choosing a token](tokens.md).
+
+## `bulk`
+
+Apply the same change to many repos. Targets come from positional names,
+`--filter SUBSTR` (name/description substring), or `--all` — exactly one.
+
+```bash
+gman bulk --all --delete-branch-on-merge on --dry-run   # list what would change
+gman bulk --filter experiment --archive --yes
+gman bulk o/r1 o/r2 --add-topic archived-candidate
+gman bulk --all --vulnerability-alerts on
+```
+
+Bulk-only flags: `--archive`/`--unarchive`, `--vulnerability-alerts {on,off}`,
+`--security-fixes {on,off}`. `--rename`, `--description`, and `--topics`
+(replace-all) are deliberately not available in bulk.
+
+The command lists the operations and targets, then asks `Proceed? [y/N]`
+unless `--yes`. `--dry-run` stops after the listing. Writes run one repo at a
+time (GitHub throttles concurrent writes); a rate-limit abort marks the
+remainder `⏭ skipped`. Exit code is 0 only if every operation succeeded.
 
 ## `delete`
 

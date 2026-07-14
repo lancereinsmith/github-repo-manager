@@ -20,6 +20,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   403 learning power graceful degradation everywhere.
 - `Open` column (open issues + PRs) and 📌 pinned badges in the TUI table.
 - New docs page: *Choosing a token* with least-privilege PAT recipes.
+- `edit` command: homepage, rename, visibility, feature toggles,
+  delete-branch-on-merge, merge-strategy defaults, and topics
+  (`--topics` / `--add-topic` / `--remove-topic`) in one call.
+- `bulk` command and TUI multi-select (`space`, `ctrl+a`, `b` menu): apply
+  settings, archive/unarchive, topics, and Dependabot toggles to many repos
+  sequentially, with dry-run and confirmation.
+- TUI `t` (topics) and `h` (homepage) editors.
 
 ## [0.1.0] - 2026-07-14
 
