@@ -118,3 +118,45 @@ def test_parser_accepts_info() -> None:
     parser = cli.build_parser()
     args = parser.parse_args(["info", "o/r", "--json"])
     assert args.command == "info" and args.as_json is True
+
+
+def test_auth_shows_token_facts(capsys) -> None:
+    from gman.capabilities import CapabilityCache, TokenInfo
+
+    class FakeClient:
+        token = "t"
+        token_source = "GITHUB_TOKEN env"
+        token_info = TokenInfo(kind="classic", scopes={"repo", "delete_repo"})
+
+        def __init__(self):
+            self.capabilities = CapabilityCache(self.token_info)
+
+        def whoami(self):
+            return "octocat"
+
+    rc = cli.cli_auth(FakeClient(), probe=False)
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "octocat" in out
+    assert "classic" in out
+    assert "delete_repo" in out
+    assert "✅" in out  # repo scope resolves read families to available
+
+
+def test_auth_rejected_token(capsys) -> None:
+    class FakeClient:
+        token = "t"
+
+        def whoami(self):
+            return None
+
+    rc = cli.cli_auth(FakeClient(), probe=False)
+    assert rc == 1
+    assert "rejected" in capsys.readouterr().err
+
+
+def test_parser_accepts_auth() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(["auth", "--probe"])
+    assert args.command == "auth" and args.probe is True

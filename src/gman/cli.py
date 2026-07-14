@@ -10,8 +10,9 @@ from typing import Any
 from rich.console import Console
 from rich.table import Table
 
+from gman.capabilities import ALL_FAMILIES
 from gman.client import GitHubClient, GitHubError
-from gman.details import details_to_dict, fetch_details, render_details
+from gman.details import details_to_dict, fetch_details, probe_capabilities, render_details
 from gman.excel import DEFAULT_EXCEL_FILE, write_excel
 
 _JSON_FIELDS = (
@@ -27,6 +28,16 @@ _JSON_FIELDS = (
     "updated_at",
     "html_url",
 )
+
+FAMILY_FEATURES = {
+    "contents.read": "README preview, releases, tarball backup",
+    "actions.read": "CI status",
+    "pages.read": "Pages URL",
+    "admin.read": "traffic stats",
+    "pulls.read": "open PR/issue split",
+    "admin.write": "archive, describe, and other writes",
+    "delete": "delete repos",
+}
 
 
 def _resolve_affiliation(affiliation: str, include_orgs: bool) -> str:
@@ -144,6 +155,44 @@ def cli_tui(client: GitHubClient) -> int:
     return 0
 
 
+def cli_auth(client: GitHubClient, probe: bool) -> int:
+    login = client.whoami()  # also captures X-OAuth-Scopes on the first response
+    if login is None:
+        print("Error: token was rejected by GitHub.", file=sys.stderr)
+        return 1
+    if probe:
+        probe_capabilities(client)
+
+    console = Console()
+    info = client.token_info
+    console.print(f"[bold]Login:[/bold] {login}")
+    console.print(f"[bold]Token source:[/bold] {client.token_source}")
+    console.print(f"[bold]Token type:[/bold] {info.kind}")
+    if info.scopes is not None:
+        console.print(f"[bold]Classic scopes:[/bold] {', '.join(sorted(info.scopes)) or '(none)'}")
+
+    table = Table(title="Feature availability")
+    table.add_column("Permission family")
+    table.add_column("Enables")
+    table.add_column("Status")
+    for family in ALL_FAMILIES:
+        avail = client.capabilities.resolve(family)
+        if avail is True:
+            status = "✅ available"
+        elif avail is False:
+            status = f"❌ unavailable — {client.capabilities.hint(family)}"
+        else:
+            status = "❓ unknown (try --probe; writes resolve on first use)"
+        table.add_row(family, FAMILY_FEATURES[family], status)
+    console.print(table)
+    if info.kind == "fine-grained":
+        console.print(
+            "[dim]Fine-grained tokens can't be introspected; "
+            "unknowns resolve as features are used.[/dim]"
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="gman",
@@ -184,6 +233,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_info.add_argument("repo_name", help="username/repo")
     p_info.add_argument("--json", dest="as_json", action="store_true")
 
+    p_auth = sub.add_parser("auth", help="Show token type and feature availability.")
+    p_auth.add_argument(
+        "--probe", action="store_true", help="Make cheap read calls to resolve unknowns."
+    )
+
     p_xl = sub.add_parser("excel", help="Export repos to xlsx.")
     p_xl.add_argument("--output", "-o", default=DEFAULT_EXCEL_FILE)
     p_xl.add_argument("--affiliation", default="owner", help="API affiliation filter.")
@@ -216,6 +270,8 @@ def main(argv: list[str] | None = None) -> int:
             return cli_describe(client, args.repo_name, args.description)
         if args.command == "info":
             return cli_info(client, args.repo_name, args.as_json)
+        if args.command == "auth":
+            return cli_auth(client, args.probe)
         if args.command == "excel":
             aff = _resolve_affiliation(args.affiliation, args.include_orgs)
             return cli_excel(client, args.output, aff)
