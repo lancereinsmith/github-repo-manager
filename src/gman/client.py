@@ -12,6 +12,8 @@ from typing import Any
 
 import requests
 
+from gman.capabilities import CapabilityCache, TokenInfo, classify_token
+
 DEFAULT_API_URL = "https://api.github.com"
 
 
@@ -68,7 +70,21 @@ class GitHubClient:
         api_url: str | None = None,
         max_retries: int = 3,
     ) -> None:
-        self.token = token or os.getenv("GITHUB_TOKEN") or _gh_cli_token()
+        if token:
+            self.token = token
+            self.token_source = "--token flag"
+        elif env_token := os.getenv("GITHUB_TOKEN"):
+            self.token = env_token
+            self.token_source = "GITHUB_TOKEN env"
+        elif cli_token := _gh_cli_token():
+            self.token = cli_token
+            self.token_source = "gh CLI"
+        else:
+            self.token = None
+            self.token_source = "none"
+        self.token_info = TokenInfo(kind=classify_token(self.token))
+        self.capabilities = CapabilityCache(self.token_info)
+        self._scopes_captured = False
         self.api_url = (api_url or os.getenv("GITHUB_API_URL") or DEFAULT_API_URL).rstrip("/")
         self.max_retries = max_retries
         self.session = requests.Session()
@@ -102,8 +118,39 @@ class GitHubClient:
             if r.status_code >= 500 and attempt < self.max_retries:
                 time.sleep(2**attempt)
                 continue
+            if not self._scopes_captured:
+                self._scopes_captured = True
+                self.token_info.apply_scopes_header(r.headers.get("X-OAuth-Scopes"))
             return r
         raise GitHubError(f"Request to {url} failed after {self.max_retries} retries")
+
+    def _get_optional(
+        self,
+        family: str,
+        path: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> requests.Response | None:
+        """GET a resource that may be permission-gated or absent.
+
+        Returns the response on 2xx. Returns ``None`` on 403 (marks the
+        capability family denied) and on 404 (marks it allowed — GitHub's
+        fine-grained permission failures are 403, so a 404 means authz
+        passed and the resource simply doesn't exist). Other statuses
+        return ``None`` without marking.
+        """
+        r = self._request("GET", path, headers=headers, params=params)
+        if r.status_code == 403:
+            self.capabilities.mark(family, False)
+            return None
+        if r.status_code == 404:
+            self.capabilities.mark(family, True)
+            return None
+        if r.ok:
+            self.capabilities.mark(family, True)
+            return r
+        return None
 
     def whoami(self) -> str | None:
         """Return the authenticated user's login, or `None` on failure."""

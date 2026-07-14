@@ -136,3 +136,55 @@ def test_api_url_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GITHUB_TOKEN", "t")
 
     assert GitHubClient().api_url == "https://ghe.example.com/api/v3"
+
+
+@responses.activate
+def test_scopes_captured_from_first_response(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/user",
+        json={"login": "octocat"},
+        status=200,
+        headers={"X-OAuth-Scopes": "repo, delete_repo"},
+    )
+    client.whoami()
+    assert client.token_info.scopes == {"repo", "delete_repo"}
+    assert client.token_info.kind == "classic"
+    assert client.capabilities.resolve("delete") is True
+
+
+@responses.activate
+def test_no_scopes_header_leaves_scopes_none(client: GitHubClient) -> None:
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/user", json={"login": "o"}, status=200)
+    client.whoami()
+    assert client.token_info.scopes is None
+
+
+@responses.activate
+def test_get_optional_403_marks_denied(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/o/r/actions/runs",
+        json={"message": "Resource not accessible by personal access token"},
+        status=403,
+    )
+    r = client._get_optional("actions.read", "/repos/o/r/actions/runs")
+    assert r is None
+    assert client.capabilities.resolve("actions.read") is False
+
+
+@responses.activate
+def test_get_optional_404_marks_allowed(client: GitHubClient) -> None:
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/r/pages", status=404)
+    r = client._get_optional("pages.read", "/repos/o/r/pages")
+    assert r is None
+    assert client.capabilities.resolve("pages.read") is True
+
+
+def test_token_source_flag() -> None:
+    assert GitHubClient(token="t").token_source == "--token flag"
+
+
+def test_token_source_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_TOKEN", "t")
+    assert GitHubClient().token_source == "GITHUB_TOKEN env"
