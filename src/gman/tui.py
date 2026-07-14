@@ -181,6 +181,72 @@ class EditDescriptionScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class EditTopicsScreen(ModalScreen[str | None]):
+    """Modal for editing a repo's topics (comma-separated). None = cancelled."""
+
+    DEFAULT_CSS = """
+    EditTopicsScreen { align: center middle; }
+    #tdialog {
+        width: 80; height: auto;
+        border: thick $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, full_name: str, current: str = "") -> None:
+        super().__init__()
+        self.full_name = full_name
+        self.current = current
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="tdialog"):
+            yield Label(f"Edit topics for {self.full_name} (comma-separated; esc to cancel):")
+            yield Input(value=self.current, id="topics")
+
+    @on(Input.Submitted)
+    def _submit(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class EditHomepageScreen(ModalScreen[str | None]):
+    """Modal for editing a repo's homepage URL. None = cancelled."""
+
+    DEFAULT_CSS = """
+    EditHomepageScreen { align: center middle; }
+    #hdialog {
+        width: 80; height: auto;
+        border: thick $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, full_name: str, current: str = "") -> None:
+        super().__init__()
+        self.full_name = full_name
+        self.current = current
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="hdialog"):
+            yield Label(f"Edit homepage for {self.full_name} (esc to cancel):")
+            yield Input(value=self.current, id="homepage")
+
+    @on(Input.Submitted)
+    def _submit(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class ReadmeScreen(ModalScreen[None]):
     """Scrollable rendered-markdown view of a repo's README."""
 
@@ -407,6 +473,8 @@ class GitHubRepoApp(App[None]):
         Binding("i", "show_details", "Details"),
         Binding("a", "toggle_archive", "Archive/Unarchive"),
         Binding("c", "edit_description", "Change desc"),
+        Binding("t", "edit_topics", "Topics"),
+        Binding("h", "edit_homepage", "Homepage"),
         Binding("d", "delete_repo", "Delete"),
         Binding("slash", "filter", "Filter"),
         Binding("space", "toggle_select", "Select"),
@@ -601,6 +669,50 @@ class GitHubRepoApp(App[None]):
             self.notify(msg)
 
         self.push_screen(EditDescriptionScreen(full, current), after)
+
+    def action_edit_topics(self) -> None:
+        repo = self._selected_repo()
+        if not repo:
+            return
+        full = repo["full_name"]
+        current = ", ".join(repo.get("topics") or [])
+
+        def after(raw: str | None) -> None:
+            if raw is None:
+                self.notify("Cancelled")
+                return
+            topics, errors = normalize_topics(raw)
+            if errors:
+                self.notify("; ".join(errors), severity="error")
+                return
+            ok, msg = self.client.set_topics(full, topics)
+            if ok:
+                repo["topics"] = topics
+                self.notify(msg)
+            else:
+                self.notify(f"Update failed: {msg}", severity="error")
+
+        self.push_screen(EditTopicsScreen(full, current), after)
+
+    def action_edit_homepage(self) -> None:
+        repo = self._selected_repo()
+        if not repo:
+            return
+        full = repo["full_name"]
+        current = repo.get("homepage") or ""
+
+        def after(url: str | None) -> None:
+            if url is None:
+                self.notify("Cancelled")
+                return
+            ok, msg = self.client.update_repo(full, {"homepage": url})
+            if ok:
+                repo["homepage"] = url
+                self.notify(msg)
+            else:
+                self.notify(f"Update failed: {msg}", severity="error")
+
+        self.push_screen(EditHomepageScreen(full, current), after)
 
     def action_show_details(self) -> None:
         repo = self._selected_repo()
