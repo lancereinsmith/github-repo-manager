@@ -473,3 +473,39 @@ def test_delete_repo_marks_delete_family(client: GitHubClient) -> None:
 
     assert ok
     assert client.capabilities.resolve("delete") is True
+
+
+@responses.activate
+def test_set_topics_puts_names(client: GitHubClient) -> None:
+    responses.add(responses.PUT, f"{DEFAULT_API_URL}/repos/o/r/topics", json={}, status=200)
+
+    ok, msg = client.set_topics("o/r", ["cli", "github"])
+
+    assert ok and msg == "Set 2 topics on o/r"
+    assert jsonlib.loads(responses.calls[0].request.body) == {"names": ["cli", "github"]}
+
+
+@responses.activate
+def test_vulnerability_alerts_on_off(client: GitHubClient) -> None:
+    responses.add(responses.PUT, f"{DEFAULT_API_URL}/repos/o/r/vulnerability-alerts", status=204)
+    responses.add(responses.DELETE, f"{DEFAULT_API_URL}/repos/o/r/vulnerability-alerts", status=204)
+
+    ok_on, msg_on = client.set_vulnerability_alerts("o/r", True)
+    ok_off, msg_off = client.set_vulnerability_alerts("o/r", False)
+
+    assert ok_on and "Enabled" in msg_on
+    assert ok_off and "Disabled" in msg_off
+
+
+@responses.activate
+def test_security_fixes_failure_tuple(client: GitHubClient) -> None:
+    responses.add(
+        responses.PUT,
+        f"{DEFAULT_API_URL}/repos/o/r/automated-security-fixes",
+        json={"message": "vulnerability alerts must be enabled"},
+        status=422,
+    )
+
+    ok, msg = client.set_automated_security_fixes("o/r", True)
+
+    assert not ok and "422" in msg

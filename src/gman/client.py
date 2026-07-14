@@ -375,3 +375,33 @@ class GitHubClient:
             return {n["nameWithOwner"] for n in nodes if n and "nameWithOwner" in n}
         except (GitHubError, ValueError, KeyError, TypeError):
             return set()
+
+    def set_topics(self, full_name: str, topics: list[str]) -> tuple[bool, str]:
+        """Replace ALL topics on a repository. Returns `(ok, message)`."""
+        return self._mutate(
+            "PUT",
+            f"/repos/{full_name}/topics",
+            ok_codes=(200,),
+            success_msg=f"Set {len(topics)} topics on {full_name}",
+            json={"names": topics},
+        )
+
+    def set_vulnerability_alerts(self, full_name: str, enabled: bool) -> tuple[bool, str]:
+        """Enable or disable Dependabot vulnerability alerts. Returns `(ok, message)`."""
+        verb = "Enabled" if enabled else "Disabled"
+        return self._mutate(
+            "PUT" if enabled else "DELETE",
+            f"/repos/{full_name}/vulnerability-alerts",
+            ok_codes=(204,),
+            success_msg=f"{verb} vulnerability alerts on {full_name}",
+        )
+
+    def set_automated_security_fixes(self, full_name: str, enabled: bool) -> tuple[bool, str]:
+        """Enable or disable Dependabot automated security fixes. Returns `(ok, message)`."""
+        verb = "Enabled" if enabled else "Disabled"
+        return self._mutate(
+            "PUT" if enabled else "DELETE",
+            f"/repos/{full_name}/automated-security-fixes",
+            ok_codes=(204,),
+            success_msg=f"{verb} automated security fixes on {full_name}",
+        )
