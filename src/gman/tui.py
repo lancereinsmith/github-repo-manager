@@ -17,7 +17,31 @@ from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, Header, Input, Label
 
 from gman.client import GitHubClient
+from gman.details import RepoDetails
 from gman.excel import DEFAULT_EXCEL_FILE, write_excel
+
+
+def row_for_repo(
+    repo: dict[str, Any], pinned: set[str]
+) -> tuple[str, str, str, str, str, str, str]:
+    """Build one DataTable row; pure function for testability."""
+    desc = (repo.get("description") or "").replace("\n", " ")
+    if len(desc) > 80:
+        desc = desc[:77] + "…"
+    vis = "🔒" if repo["private"] else "🌐"
+    if repo.get("archived"):
+        vis += "❌"
+    if repo.get("full_name") in pinned:
+        vis += "📌"
+    return (
+        repo["name"],
+        vis,
+        desc,
+        repo.get("language") or "",
+        str(repo.get("stargazers_count", 0)),
+        str(repo.get("open_issues_count", 0)),
+        (repo.get("updated_at") or "")[:10],
+    )
 
 
 class ConfirmDeleteScreen(ModalScreen[bool]):
@@ -143,6 +167,8 @@ class GitHubRepoApp(App[None]):
         self.all_repos: list[dict[str, Any]] = []
         self.filter_text: str = ""
         self.username: str = ""
+        self.pinned: set[str] = set()
+        self.details_cache: dict[tuple[str, str], RepoDetails] = {}
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -153,7 +179,7 @@ class GitHubRepoApp(App[None]):
         self.title = "GitHub Repos"
         self.sub_title = "loading…"
         table = self.query_one(DataTable)
-        table.add_columns("Name", "Vis.", "Description", "Lang", "Stars", "Updated")
+        table.add_columns("Name", "Vis.", "Description", "Lang", "Stars", "Open", "Updated")
         self.load_repos()
 
     @work(thread=True, exclusive=True)
@@ -161,14 +187,17 @@ class GitHubRepoApp(App[None]):
         try:
             username = self.client.whoami() or ""
             repos = self.client.list_repos()
+            pinned = self.client.get_pinned_repos()
         except Exception as e:
             self.call_from_thread(self.notify, f"Failed to load: {e}", severity="error")
             return
-        self.call_from_thread(self._on_loaded, username, repos)
+        self.call_from_thread(self._on_loaded, username, repos, pinned)
 
-    def _on_loaded(self, username: str, repos: list[dict[str, Any]]) -> None:
+    def _on_loaded(self, username: str, repos: list[dict[str, Any]], pinned: set[str]) -> None:
         self.username = username
         self.all_repos = repos
+        self.pinned = pinned
+        self.details_cache.clear()
         self.refresh_table()
 
     def refresh_table(self) -> None:
@@ -183,21 +212,7 @@ class GitHubRepoApp(App[None]):
             or ft in (r.get("description") or "").lower()
         ]
         for repo in visible:
-            desc = (repo.get("description") or "").replace("\n", " ")
-            if len(desc) > 80:
-                desc = desc[:77] + "…"
-            vis = "🔒" if repo["private"] else "🌐"
-            if repo.get("archived"):
-                vis += "❌"
-            table.add_row(
-                repo["name"],
-                vis,
-                desc,
-                repo.get("language") or "",
-                str(repo.get("stargazers_count", 0)),
-                (repo.get("updated_at") or "")[:10],
-                key=repo["full_name"],
-            )
+            table.add_row(*row_for_repo(repo, self.pinned), key=repo["full_name"])
         suffix = f" — filter: {self.filter_text!r}" if self.filter_text else ""
         self.sub_title = f"{self.username} — {len(visible)}/{len(self.all_repos)}{suffix}"
 
