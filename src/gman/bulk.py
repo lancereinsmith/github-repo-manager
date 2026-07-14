@@ -1,0 +1,158 @@
+"""Bulk write operations: topic validation, op registry, sequential runner."""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
+from gman.client import GitHubClient
+
+_TOPIC_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,49}$")
+MAX_TOPICS = 20
+
+
+def normalize_topics(raw: str) -> tuple[list[str], list[str]]:
+    """Parse a comma/space separated topic string into `(valid, errors)`.
+
+    Lowercases, dedupes preserving order, and validates GitHub's topic rules
+    (start alphanumeric; lowercase letters/numbers/hyphens; ≤50 chars; ≤20
+    topics per repo).
+    """
+    valid: list[str] = []
+    errors: list[str] = []
+    for part in re.split(r"[,\s]+", raw.strip()):
+        if not part:
+            continue
+        topic = part.lower()
+        if topic in valid:
+            continue
+        if not _TOPIC_RE.match(topic):
+            errors.append(
+                f"invalid topic {topic!r} (lowercase letters, numbers, hyphens; max 50 chars)"
+            )
+            continue
+        valid.append(topic)
+    if len(valid) > MAX_TOPICS:
+        errors.append(f"too many topics ({len(valid)}); GitHub allows at most {MAX_TOPICS}")
+    return valid, errors
+
+
+@dataclass(frozen=True)
+class BulkOp:
+    """One bulk operation: a label plus an apply(client, repo) callable."""
+
+    key: str
+    label: str
+    apply: Callable[[GitHubClient, dict[str, Any]], tuple[bool, str]]
+
+
+@dataclass
+class BulkResult:
+    """Outcome of one op applied to one repo."""
+
+    full_name: str
+    op_label: str
+    ok: bool
+    msg: str
+    skipped: bool = False
+
+
+def fields_op(fields: dict[str, Any], label: str, key: str = "fields") -> BulkOp:
+    """An op that PATCHes the same settings fields onto each repo."""
+    return BulkOp(key, label, lambda client, repo: client.update_repo(repo["full_name"], fields))
+
+
+def add_topic_op(topic: str) -> BulkOp:
+    """Add one topic (read-modify-write; no-op success when already present)."""
+
+    def apply(client: GitHubClient, repo: dict[str, Any]) -> tuple[bool, str]:
+        current = list(repo.get("topics") or [])
+        if topic in current:
+            return True, f"{repo['full_name']} already has topic {topic!r}"
+        return client.set_topics(repo["full_name"], [*current, topic])
+
+    return BulkOp("add_topic", f"Add topic {topic!r}", apply)
+
+
+def remove_topic_op(topic: str) -> BulkOp:
+    """Remove one topic (no-op success when absent)."""
+
+    def apply(client: GitHubClient, repo: dict[str, Any]) -> tuple[bool, str]:
+        current = list(repo.get("topics") or [])
+        if topic not in current:
+            return True, f"{repo['full_name']} does not have topic {topic!r}"
+        return client.set_topics(repo["full_name"], [t for t in current if t != topic])
+
+    return BulkOp("remove_topic", f"Remove topic {topic!r}", apply)
+
+
+def vulnerability_alerts_op(enabled: bool) -> BulkOp:
+    state = "ON" if enabled else "OFF"
+    return BulkOp(
+        "vulnerability_alerts",
+        f"Vulnerability alerts → {state}",
+        lambda client, repo: client.set_vulnerability_alerts(repo["full_name"], enabled),
+    )
+
+
+def security_fixes_op(enabled: bool) -> BulkOp:
+    state = "ON" if enabled else "OFF"
+    return BulkOp(
+        "security_fixes",
+        f"Automated security fixes → {state}",
+        lambda client, repo: client.set_automated_security_fixes(repo["full_name"], enabled),
+    )
+
+
+# (key, label, needs_topic) — display order for the TUI bulk menu.
+TUI_BULK_MENU: list[tuple[str, str, bool]] = [
+    ("archive", "Archive", False),
+    ("unarchive", "Unarchive", False),
+    ("dbom_on", "Delete branch on merge → ON", False),
+    ("dbom_off", "Delete branch on merge → OFF", False),
+    ("wiki_off", "Wiki → OFF", False),
+    ("wiki_on", "Wiki → ON", False),
+    ("issues_on", "Issues → ON", False),
+    ("issues_off", "Issues → OFF", False),
+    ("projects_off", "Projects → OFF", False),
+    ("projects_on", "Projects → ON", False),
+    ("add_topic", "Add topic…", True),
+    ("remove_topic", "Remove topic…", True),
+    ("vuln_on", "Vulnerability alerts → ON", False),
+    ("vuln_off", "Vulnerability alerts → OFF", False),
+    ("secfix_on", "Automated security fixes → ON", False),
+    ("secfix_off", "Automated security fixes → OFF", False),
+]
+
+
+def build_menu_op(key: str, arg: str | None = None) -> BulkOp:
+    """Resolve a TUI menu key (plus topic arg where needed) to a BulkOp."""
+    simple: dict[str, BulkOp] = {
+        "archive": fields_op({"archived": True}, "Archive", key="archive"),
+        "unarchive": fields_op({"archived": False}, "Unarchive", key="unarchive"),
+        "dbom_on": fields_op(
+            {"delete_branch_on_merge": True}, "Delete branch on merge → ON", key="dbom_on"
+        ),
+        "dbom_off": fields_op(
+            {"delete_branch_on_merge": False}, "Delete branch on merge → OFF", key="dbom_off"
+        ),
+        "wiki_on": fields_op({"has_wiki": True}, "Wiki → ON", key="wiki_on"),
+        "wiki_off": fields_op({"has_wiki": False}, "Wiki → OFF", key="wiki_off"),
+        "issues_on": fields_op({"has_issues": True}, "Issues → ON", key="issues_on"),
+        "issues_off": fields_op({"has_issues": False}, "Issues → OFF", key="issues_off"),
+        "projects_on": fields_op({"has_projects": True}, "Projects → ON", key="projects_on"),
+        "projects_off": fields_op({"has_projects": False}, "Projects → OFF", key="projects_off"),
+        "vuln_on": vulnerability_alerts_op(True),
+        "vuln_off": vulnerability_alerts_op(False),
+        "secfix_on": security_fixes_op(True),
+        "secfix_off": security_fixes_op(False),
+    }
+    if key in simple:
+        return simple[key]
+    if key in ("add_topic", "remove_topic"):
+        if not arg:
+            raise ValueError(f"{key} requires a topic argument")
+        return add_topic_op(arg) if key == "add_topic" else remove_topic_op(arg)
+    raise ValueError(f"unknown bulk op {key!r}")
