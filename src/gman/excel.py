@@ -12,6 +12,18 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 DEFAULT_EXCEL_FILE = "github_repos.xlsx"
 
+# Characters Excel/LibreOffice treat as the start of a formula. Values that
+# begin with one are prefixed with an apostrophe so they render as literal
+# text — this prevents CSV/formula injection from untrusted repo metadata.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _safe_text(value: str | None) -> str:
+    text = value or ""
+    if text.startswith(_FORMULA_PREFIXES):
+        return "'" + text
+    return text
+
 
 def write_excel(repos: list[dict[str, Any]], path: str = DEFAULT_EXCEL_FILE) -> None:
     """Write repos to an .xlsx file sorted by Last Updated (descending).
@@ -42,9 +54,9 @@ def write_excel(repos: list[dict[str, Any]], path: str = DEFAULT_EXCEL_FILE) -> 
     for i, repo in enumerate(repos_sorted, start=2):
         archived = bool(repo.get("archived"))
         updated_dt = _parse_updated(repo.get("updated_at"))
-        ws.cell(row=i, column=1, value=repo.get("name"))
-        ws.cell(row=i, column=2, value=repo.get("description") or "")
-        ws.cell(row=i, column=3, value=(repo.get("visibility") or "").capitalize())
+        ws.cell(row=i, column=1, value=_safe_text(repo.get("name")))
+        ws.cell(row=i, column=2, value=_safe_text(repo.get("description")))
+        ws.cell(row=i, column=3, value=_safe_text(repo.get("visibility")).capitalize())
         cell = ws.cell(row=i, column=4, value=updated_dt)
         cell.number_format = "yyyy-mm-dd hh:mm"
 

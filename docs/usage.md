@@ -1,35 +1,53 @@
 # Usage
 
 ```bash
-github-repo-manager [--token TOKEN] {list,delete,archive,excel,tui} [...]
+gman [--token TOKEN] [--api-url URL] {list,delete,archive,describe,excel,tui} [...]
 ```
 
 If `--token` is omitted, `GITHUB_TOKEN` is used; failing that, the token
-stored by `gh auth login` is used.
+stored by `gh auth login` is used. `--api-url` (or `GITHUB_API_URL`) points
+`gman` at a GitHub Enterprise Server instance, e.g.
+`https://ghe.example.com/api/v3`.
 
 ## `list`
 
 Print a Rich table to stdout, sorted by Last Updated descending.
 
 ```bash
-github-repo-manager list
-github-repo-manager list --detailed
+gman list
+gman list --detailed
+gman list --json
+gman list --include-orgs
 ```
 
-`--detailed` adds Language, Stars, and Forks columns.
+- `--detailed` adds Language, Stars, and Forks columns.
+- `--json` emits a machine-readable array to stdout (progress is written to
+  stderr, so the JSON stays pipeable).
+- `--affiliation` sets the raw API filter (default `owner`); `--include-orgs`
+  is a shortcut for `owner,collaborator,organization_member`.
 
 ## `excel`
 
 Export every repo to an `.xlsx` file.
 
 ```bash
-github-repo-manager excel
-github-repo-manager excel --output ~/Desktop/repos.xlsx
+gman excel
+gman excel --output ~/Desktop/repos.xlsx
+gman excel --include-orgs
 ```
 
 The output file has a header row, banded even rows, frozen pane on row 1,
 an autofilter, and landscape page setup that fits to width when printed.
 See [Excel export](excel.md) for the full layout.
+
+## `describe`
+
+Set a repo's description. Pass an empty string to clear it.
+
+```bash
+gman describe username/project "A short, useful tagline"
+gman describe username/project ""
+```
 
 ## `delete`
 
@@ -37,8 +55,8 @@ Delete a repo by full name. You'll be prompted to retype the name unless
 `--force` is supplied.
 
 ```bash
-github-repo-manager delete username/old-project
-github-repo-manager delete username/old-project --force
+gman delete username/old-project
+gman delete username/old-project --force
 ```
 
 !!! warning
@@ -57,17 +75,17 @@ Archive (or unarchive) a repo. A `y/N` confirmation is shown unless
 flip a repo back.
 
 ```bash
-github-repo-manager archive username/old-project
-github-repo-manager archive username/old-project --unarchive
-github-repo-manager archive username/old-project --force
+gman archive username/old-project
+gman archive username/old-project --unarchive
+gman archive username/old-project --force
 ```
 
 ## `tui`
 
-Launch the interactive Textual UI.
+Launch the interactive Textual UI (`gman-tui` is a shortcut for this).
 
 ```bash
-github-repo-manager tui
+gman tui
 ```
 
 See the [TUI](tui.md) page for keybindings.

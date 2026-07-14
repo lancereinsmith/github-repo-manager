@@ -22,6 +22,8 @@ API gives back when querying `/user/repos?sort=updated&direction=desc`.
 - Description column has wrap-text enabled
 - `Last Updated` cells are real datetimes formatted `yyyy-mm-dd hh:mm`
 - Header pane is frozen and an autofilter is applied to the table
+- Values starting with `= + - @` are prefixed with `'` so spreadsheet apps
+  render them as text rather than executing them as formulas
 
 ## Page setup
 
@@ -33,7 +35,7 @@ API gives back when querying `/user/repos?sort=updated&direction=desc`.
 ## Programmatic use
 
 ```python
-from github_repo_manager import GitHubClient, write_excel
+from gman import GitHubClient, write_excel
 
 client = GitHubClient()  # reads GITHUB_TOKEN
 write_excel(client.list_repos(), "repos.xlsx")

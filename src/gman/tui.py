@@ -16,8 +16,8 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, Header, Input, Label
 
-from github_repo_manager.client import GitHubClient
-from github_repo_manager.excel import DEFAULT_EXCEL_FILE, write_excel
+from gman.client import GitHubClient
+from gman.excel import DEFAULT_EXCEL_FILE, write_excel
 
 
 class ConfirmDeleteScreen(ModalScreen[bool]):
@@ -234,7 +234,9 @@ class GitHubRepoApp(App[None]):
     def action_open_excel(self) -> None:
         path = Path(DEFAULT_EXCEL_FILE).resolve()
         if not path.is_file():
-            self.notify(f"No spreadsheet at {path} — press 'e' to export first.", severity="warning")
+            self.notify(
+                f"No spreadsheet at {path} — press 'e' to export first.", severity="warning"
+            )
             return
         try:
             if sys.platform == "darwin":

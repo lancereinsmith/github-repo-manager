@@ -1,20 +1,61 @@
-"""Command-line entry point: `list`, `delete`, `archive`, `excel`, `tui`."""
+"""Command-line entry point: `list`, `delete`, `archive`, `describe`, `excel`, `tui`."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from typing import Any
 
 from rich.console import Console
 from rich.table import Table
 
-from github_repo_manager.client import GitHubClient
-from github_repo_manager.excel import DEFAULT_EXCEL_FILE, write_excel
+from gman.client import GitHubClient, GitHubError
+from gman.excel import DEFAULT_EXCEL_FILE, write_excel
+
+_JSON_FIELDS = (
+    "name",
+    "full_name",
+    "private",
+    "archived",
+    "visibility",
+    "description",
+    "language",
+    "stargazers_count",
+    "forks_count",
+    "updated_at",
+    "html_url",
+)
 
 
-def cli_list(client: GitHubClient, detailed: bool) -> int:
+def _resolve_affiliation(affiliation: str, include_orgs: bool) -> str:
+    """Return the API `affiliation` filter, widening it when --include-orgs is set."""
+    if include_orgs:
+        return "owner,collaborator,organization_member"
+    return affiliation
+
+
+def _fetch_repos(client: GitHubClient, affiliation: str, quiet: bool) -> list[dict[str, Any]]:
+    """Fetch repos, showing a spinner on stderr unless `quiet`."""
+    if quiet:
+        return client.list_repos(affiliation=affiliation)
+    err = Console(stderr=True)
+    with err.status("Fetching repositories…") as status:
+        return client.list_repos(
+            affiliation=affiliation,
+            progress=lambda n: status.update(f"Fetched {n} repositories…"),
+        )
+
+
+def cli_list(client: GitHubClient, detailed: bool, as_json: bool, affiliation: str) -> int:
+    repos = _fetch_repos(client, affiliation, quiet=as_json)
+    if as_json:
+        trimmed = [{k: repo.get(k) for k in _JSON_FIELDS} for repo in repos]
+        json.dump(trimmed, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 0
+
     console = Console()
-    repos = client.list_repos()
     table = Table(title=f"GitHub Repositories ({len(repos)})")
     table.add_column("Name", style="bold")
     table.add_column("Vis.")
@@ -66,8 +107,14 @@ def cli_archive(client: GitHubClient, full_name: str, unarchive: bool, force: bo
     return 0 if ok else 1
 
 
-def cli_excel(client: GitHubClient, path: str) -> int:
-    repos = client.list_repos()
+def cli_describe(client: GitHubClient, full_name: str, description: str) -> int:
+    ok, msg = client.set_description(full_name, description)
+    print(("✅ " if ok else "❌ ") + msg)
+    return 0 if ok else 1
+
+
+def cli_excel(client: GitHubClient, path: str, affiliation: str) -> int:
+    repos = _fetch_repos(client, affiliation, quiet=False)
     if not repos:
         print("No repositories returned.", file=sys.stderr)
         return 1
@@ -77,7 +124,7 @@ def cli_excel(client: GitHubClient, path: str) -> int:
 
 
 def cli_tui(client: GitHubClient) -> int:
-    from github_repo_manager.tui import GitHubRepoApp
+    from gman.tui import GitHubRepoApp
 
     GitHubRepoApp(client).run()
     return 0
@@ -85,14 +132,26 @@ def cli_tui(client: GitHubClient) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="github-repo-manager",
+        prog="gman",
         description="List, manage, and export your GitHub repositories.",
     )
     parser.add_argument("--token", "-t", help="GitHub PAT (overrides $GITHUB_TOKEN).")
+    parser.add_argument(
+        "--api-url",
+        help="GitHub API base URL (overrides $GITHUB_API_URL); "
+        "e.g. https://ghe.example.com/api/v3 for Enterprise.",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_list = sub.add_parser("list", help="Print repos to stdout.")
     p_list.add_argument("--detailed", "-d", action="store_true")
+    p_list.add_argument("--json", dest="as_json", action="store_true", help="Emit JSON to stdout.")
+    p_list.add_argument("--affiliation", default="owner", help="API affiliation filter.")
+    p_list.add_argument(
+        "--include-orgs",
+        action="store_true",
+        help="Include collaborator and organization repos.",
+    )
 
     p_del = sub.add_parser("delete", help="Delete a repo.")
     p_del.add_argument("repo_name", help="username/repo")
@@ -103,8 +162,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_arch.add_argument("--unarchive", "-u", action="store_true", help="Unarchive instead.")
     p_arch.add_argument("--force", "-f", action="store_true")
 
+    p_desc = sub.add_parser("describe", help="Set a repo's description.")
+    p_desc.add_argument("repo_name", help="username/repo")
+    p_desc.add_argument("description", help="New description (empty string clears it).")
+
     p_xl = sub.add_parser("excel", help="Export repos to xlsx.")
     p_xl.add_argument("--output", "-o", default=DEFAULT_EXCEL_FILE)
+    p_xl.add_argument("--affiliation", default="owner", help="API affiliation filter.")
+    p_xl.add_argument("--include-orgs", action="store_true", help="Include org/collab repos.")
 
     sub.add_parser("tui", help="Launch the interactive Textual TUI.")
     return parser
@@ -112,7 +177,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    client = GitHubClient(token=args.token)
+    client = GitHubClient(token=args.token, api_url=args.api_url)
     if not client.token:
         print(
             "Error: no GitHub token found. Provide --token, set GITHUB_TOKEN, "
@@ -121,16 +186,24 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    if args.command == "list":
-        return cli_list(client, args.detailed)
-    if args.command == "delete":
-        return cli_delete(client, args.repo_name, args.force)
-    if args.command == "archive":
-        return cli_archive(client, args.repo_name, args.unarchive, args.force)
-    if args.command == "excel":
-        return cli_excel(client, args.output)
-    if args.command == "tui":
-        return cli_tui(client)
+    try:
+        if args.command == "list":
+            aff = _resolve_affiliation(args.affiliation, args.include_orgs)
+            return cli_list(client, args.detailed, args.as_json, aff)
+        if args.command == "delete":
+            return cli_delete(client, args.repo_name, args.force)
+        if args.command == "archive":
+            return cli_archive(client, args.repo_name, args.unarchive, args.force)
+        if args.command == "describe":
+            return cli_describe(client, args.repo_name, args.description)
+        if args.command == "excel":
+            aff = _resolve_affiliation(args.affiliation, args.include_orgs)
+            return cli_excel(client, args.output, aff)
+        if args.command == "tui":
+            return cli_tui(client)
+    except GitHubError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
     return 1
 
 

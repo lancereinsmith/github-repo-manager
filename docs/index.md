@@ -1,34 +1,38 @@
-# GitHub Repo Manager
+# gman
 
 A terminal tool for browsing, exporting, and pruning the GitHub repositories
 owned by your authenticated user.
 
 ## What it does
 
-- **`list`** — print a Rich-formatted table of your repos to stdout
+- **`list`** — print a Rich-formatted table of your repos to stdout (or JSON
+  with `--json`)
 - **`excel`** — export every repo to a landscape `.xlsx` (banded rows, frozen
   header, autofilter, sorted by Last Updated descending)
+- **`describe`** — set a repo's description from the command line
 - **`delete`** — delete a repo by `owner/name` with a confirmation prompt
 - **`archive`** — archive (or `--unarchive`) a repo
 - **`tui`** — open an interactive Textual table where you can filter, open
-  repos in your browser, export, and delete
+  repos in your browser, archive, edit descriptions, export, and delete
 
 ## Install
 
-The project uses [uv](https://docs.astral.sh/uv/) for everything.
-
 ```bash
-git clone <repo-url> github-repo-manager
-cd github-repo-manager
-uv sync
+uv tool install gman     # or: pipx install gman  /  pip install gman
 ```
 
-A console script `github-repo-manager` (and the shorter alias `grm`) is
-installed into the project venv:
+Two console scripts are installed:
+
+- `gman` — the full CLI (`gman --help`)
+- `gman-tui` — a shortcut that launches the TUI directly
+
+For local development, clone the repo and use [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv run github-repo-manager --help
-uv run grm tui
+git clone https://github.com/lreinsmith/gman
+cd gman
+uv sync
+uv run gman --help
 ```
 
 ## Authentication
@@ -46,6 +50,15 @@ Note: `gh auth login` does not request `delete_repo` by default. To use the
 
 ```bash
 gh auth refresh -h github.com -s delete_repo
+```
+
+## GitHub Enterprise
+
+Point `gman` at a GitHub Enterprise Server instance with `--api-url` or the
+`GITHUB_API_URL` environment variable:
+
+```bash
+gman --api-url https://ghe.example.com/api/v3 list
 ```
 
 See the [Usage](usage.md) page for command-by-command details, or jump

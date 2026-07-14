@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Local Python pin (supported floor is set by requires-python in pyproject.toml)
+.python-version
+
 # uv lockfile committed; ignore caches
 .ruff_cache/
 .ty_cache/
@@ -23,3 +26,5 @@ github_repos.xlsx
 .DS_Store
 .idea/
 .vscode/
+
+dev/

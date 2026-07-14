@@ -1,9 +1,9 @@
 [project]
-site_name = "GitHub Repo Manager"
+site_name = "gman"
 site_description = "List, manage, and export your GitHub repositories from the terminal."
 site_author = "Lance Reinsmith"
 copyright = "&copy; 2026 Lance Reinsmith"
-repo_url = "https://github.com/lreinsmith/github-repo-manager"
+repo_url = "https://github.com/lreinsmith/gman"
 
 docs_dir = "docs"
 site_dir = "site"
