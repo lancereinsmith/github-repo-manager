@@ -29,8 +29,8 @@ from gman.excel import DEFAULT_EXCEL_FILE, write_excel
 
 
 def row_for_repo(
-    repo: dict[str, Any], pinned: set[str]
-) -> tuple[str, str, str, str, str, str, str]:
+    repo: dict[str, Any], pinned: set[str], selected: set[str]
+) -> tuple[str, str, str, str, str, str, str, str]:
     """Build one DataTable row; pure function for testability."""
     desc = (repo.get("description") or "").replace("\n", " ")
     if len(desc) > 80:
@@ -41,6 +41,7 @@ def row_for_repo(
     if repo.get("full_name") in pinned:
         vis += "📌"
     return (
+        "✓" if repo.get("full_name") in selected else "",
         repo["name"],
         vis,
         escape(desc),
@@ -49,6 +50,13 @@ def row_for_repo(
         str(repo.get("open_issues_count", 0)),
         (repo.get("updated_at") or "")[:10],
     )
+
+
+def toggle_all(selected: set[str], visible: set[str]) -> set[str]:
+    """All visible already selected → deselect them; otherwise select all visible."""
+    if visible and visible <= selected:
+        return selected - visible
+    return selected | visible
 
 
 class ConfirmDeleteScreen(ModalScreen[tuple[bool, bool] | None]):
@@ -272,6 +280,8 @@ class GitHubRepoApp(App[None]):
         Binding("c", "edit_description", "Change desc"),
         Binding("d", "delete_repo", "Delete"),
         Binding("slash", "filter", "Filter"),
+        Binding("space", "toggle_select", "Select"),
+        Binding("ctrl+a", "toggle_select_all", "Select all"),
     ]
 
     def __init__(self, client: GitHubClient) -> None:
@@ -281,6 +291,7 @@ class GitHubRepoApp(App[None]):
         self.filter_text: str = ""
         self.username: str = ""
         self.pinned: set[str] = set()
+        self.selected: set[str] = set()
         self.details_cache: dict[tuple[str, str], RepoDetails] = {}
 
     def compose(self) -> ComposeResult:
@@ -292,7 +303,7 @@ class GitHubRepoApp(App[None]):
         self.title = "GitHub Repos"
         self.sub_title = "loading…"
         table = self.query_one(DataTable)
-        table.add_columns("Name", "Vis.", "Description", "Lang", "Stars", "Open", "Updated")
+        table.add_columns("✓", "Name", "Vis.", "Description", "Lang", "Stars", "Open", "Updated")
         self.load_repos()
 
     @work(thread=True, exclusive=True)
@@ -310,23 +321,29 @@ class GitHubRepoApp(App[None]):
         self.username = username
         self.all_repos = repos
         self.pinned = pinned
+        self.selected.clear()
         self.details_cache.clear()
         self.refresh_table()
 
-    def refresh_table(self) -> None:
-        table = self.query_one(DataTable)
-        table.clear()
+    def _visible_repos(self) -> list[dict[str, Any]]:
         ft = self.filter_text.lower()
-        visible = [
+        return [
             r
             for r in self.all_repos
             if not ft
             or ft in (r.get("name") or "").lower()
             or ft in (r.get("description") or "").lower()
         ]
+
+    def refresh_table(self) -> None:
+        table = self.query_one(DataTable)
+        table.clear()
+        visible = self._visible_repos()
         for repo in visible:
-            table.add_row(*row_for_repo(repo, self.pinned), key=repo["full_name"])
+            table.add_row(*row_for_repo(repo, self.pinned, self.selected), key=repo["full_name"])
         suffix = f" — filter: {self.filter_text!r}" if self.filter_text else ""
+        if self.selected:
+            suffix += f" — {len(self.selected)} selected"
         self.sub_title = f"{self.username} — {len(visible)}/{len(self.all_repos)}{suffix}"
 
     def _selected_repo(self) -> dict[str, Any] | None:
@@ -459,6 +476,22 @@ class GitHubRepoApp(App[None]):
         repo = self._selected_repo()
         if repo:
             self.push_screen(RepoDetailScreen(self.client, repo, self.details_cache))
+
+    def action_toggle_select(self) -> None:
+        repo = self._selected_repo()
+        if not repo:
+            return
+        full = repo["full_name"]
+        if full in self.selected:
+            self.selected.discard(full)
+        else:
+            self.selected.add(full)
+        self.refresh_table()
+
+    def action_toggle_select_all(self) -> None:
+        visible = {r["full_name"] for r in self._visible_repos()}
+        self.selected = toggle_all(self.selected, visible)
+        self.refresh_table()
 
     @on(DataTable.RowSelected)
     def _row_selected(self, event: DataTable.RowSelected) -> None:

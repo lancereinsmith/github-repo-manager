@@ -4,28 +4,42 @@ from __future__ import annotations
 
 from conftest import make_repo
 
-from gman.tui import row_for_repo
+from gman.tui import row_for_repo, toggle_all
 
 
 def test_row_for_repo_basic() -> None:
     repo = make_repo("alpha", stargazers_count=5, open_issues_count=2)
-    row = row_for_repo(repo, pinned=set())
-    assert row == ("alpha", "🌐", "desc for alpha", "Python", "5", "2", "2026-01-01")
+    row = row_for_repo(repo, pinned=set(), selected=set())
+    assert row == ("", "alpha", "🌐", "desc for alpha", "Python", "5", "2", "2026-01-01")
 
 
 def test_row_for_repo_badges() -> None:
     repo = make_repo("beta", private=True, archived=True)
-    row = row_for_repo(repo, pinned={"octocat/beta"})
-    assert row[1] == "🔒❌📌"
+    row = row_for_repo(repo, pinned={"octocat/beta"}, selected=set())
+    assert row[2] == "🔒❌📌"
 
 
 def test_row_for_repo_truncates_description() -> None:
     repo = make_repo("gamma", description="x" * 100)
-    row = row_for_repo(repo, pinned=set())
-    assert len(row[2]) == 78 and row[2].endswith("…")
+    row = row_for_repo(repo, pinned=set(), selected=set())
+    assert len(row[3]) == 78 and row[3].endswith("…")
 
 
 def test_row_for_repo_escapes_markup_in_description() -> None:
     repo = make_repo("delta", description="see [/] notes")
-    row = row_for_repo(repo, pinned=set())
-    assert row[2] == r"see \[/] notes"
+    row = row_for_repo(repo, pinned=set(), selected=set())
+    assert row[3] == r"see \[/] notes"
+
+
+def test_row_for_repo_selection_marker() -> None:
+    repo = make_repo("epsilon")
+    assert row_for_repo(repo, pinned=set(), selected={"octocat/epsilon"})[0] == "✓"
+    assert row_for_repo(repo, pinned=set(), selected=set())[0] == ""
+
+
+def test_toggle_all_selects_then_deselects() -> None:
+    visible = {"o/a", "o/b"}
+    assert toggle_all(set(), visible) == {"o/a", "o/b"}
+    assert toggle_all({"o/a"}, visible) == {"o/a", "o/b"}  # partial → select all
+    assert toggle_all({"o/a", "o/b", "o/c"}, visible) == {"o/c"}  # all visible → drop them
+    assert toggle_all(set(), set()) == set()
