@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.svg" alt="gman logo" width="140" height="140">
+<img src="https://raw.githubusercontent.com/lancereinsmith/github-repo-manager/main/assets/logo.svg" alt="gman logo" width="140" height="140">
 
 # gman
 
@@ -53,17 +53,6 @@ gman --api-url https://ghe.example.com/api/v3 list   # GitHub Enterprise
 ```
 
 See the [docs](docs/index.md) for full usage and configuration.
-
-## Development
-
-```bash
-uv sync
-uv run ruff check .
-uv run ruff format --check .
-uv run ty check
-uv run pytest
-uv run zensical serve          # live-preview the docs
-```
 
 ## License
 

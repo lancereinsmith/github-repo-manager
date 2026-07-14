@@ -11,6 +11,8 @@ use_directory_urls = true
 
 [project.theme]
 variant = "modern"
+logo = "assets/logo.svg"
+favicon = "assets/logo.svg"
 features = [
     "navigation.instant",
     "navigation.instant.prefetch",

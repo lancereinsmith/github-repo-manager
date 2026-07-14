@@ -1,4 +1,10 @@
+<p align="center">
+  <img src="assets/logo.svg" alt="gman logo" width="140" height="140">
+</p>
+
 # gman
+
+<p align="center"><strong>Your repos. Under investigation.</strong></p>
 
 A terminal tool for browsing, exporting, and pruning the GitHub repositories
 owned by your authenticated user.
