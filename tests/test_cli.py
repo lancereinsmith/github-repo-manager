@@ -349,3 +349,80 @@ def test_edit_invalid_topic_applies_nothing(capsys) -> None:
     assert rc == 2
     assert calls == []  # no write happened
     assert "invalid topic" in capsys.readouterr().err
+
+
+def _bulk_args(*argv: str):
+    return cli.build_parser().parse_args(["bulk", *argv])
+
+
+class _BulkFakeClient:
+    def __init__(self, repos):
+        self.repos = repos
+        self.patched: list = []
+        from gman.capabilities import CapabilityCache, TokenInfo
+
+        self.capabilities = CapabilityCache(TokenInfo(kind="classic", scopes={"repo"}))
+
+    def list_repos(self, **kw):
+        return self.repos
+
+    def get_repo(self, full):
+        return next(r for r in self.repos if r["full_name"] == full)
+
+    def update_repo(self, full, fields):
+        self.patched.append((full, fields))
+        return True, f"Updated {full}"
+
+
+def test_bulk_requires_exactly_one_target_source(capsys) -> None:
+    fake = _BulkFakeClient([make_repo("a")])
+    rc = cli.cli_bulk(fake, _bulk_args("--wiki", "off"))  # no targets at all
+    assert rc == 2
+    assert "exactly one" in capsys.readouterr().err
+
+
+def test_bulk_dry_run_lists_and_changes_nothing(capsys) -> None:
+    fake = _BulkFakeClient([make_repo("a"), make_repo("b", description="match me")])
+    rc = cli.cli_bulk(fake, _bulk_args("--filter", "match", "--wiki", "off", "--dry-run"))
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "octocat/b" in out and "octocat/a" not in out
+    assert "Dry run" in out
+    assert fake.patched == []
+
+
+def test_bulk_confirm_decline_makes_no_calls(monkeypatch, capsys) -> None:
+    fake = _BulkFakeClient([make_repo("a")])
+    monkeypatch.setattr("builtins.input", lambda _p: "n")
+    rc = cli.cli_bulk(fake, _bulk_args("--all", "--wiki", "off"))
+    assert rc == 1
+    assert fake.patched == []
+
+
+def test_bulk_yes_applies_and_reports(capsys) -> None:
+    fake = _BulkFakeClient([make_repo("a"), make_repo("b")])
+    rc = cli.cli_bulk(fake, _bulk_args("--all", "--delete-branch-on-merge", "on", "--yes"))
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert fake.patched == [
+        ("octocat/a", {"delete_branch_on_merge": True}),
+        ("octocat/b", {"delete_branch_on_merge": True}),
+    ]
+    assert out.count("✅") == 2
+
+
+def test_bulk_no_op_flags_errors(capsys) -> None:
+    fake = _BulkFakeClient([make_repo("a")])
+    rc = cli.cli_bulk(fake, _bulk_args("--all"))
+    assert rc == 2
+    assert "no operation flags" in capsys.readouterr().err
+
+
+def test_bulk_denied_write_capability_errors(capsys) -> None:
+    fake = _BulkFakeClient([make_repo("a")])
+    fake.capabilities.mark("admin.write", False)
+    rc = cli.cli_bulk(fake, _bulk_args("--all", "--wiki", "off", "--yes"))
+    assert rc == 1
+    assert "cannot write" in capsys.readouterr().err

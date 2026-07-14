@@ -12,7 +12,16 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from gman.bulk import normalize_topics
+from gman.bulk import (
+    BulkOp,
+    add_topic_op,
+    fields_op,
+    normalize_topics,
+    remove_topic_op,
+    run_bulk,
+    security_fixes_op,
+    vulnerability_alerts_op,
+)
 from gman.capabilities import ALL_FAMILIES
 from gman.client import GitHubClient, GitHubError
 from gman.details import (
@@ -319,6 +328,111 @@ def cli_edit(client: GitHubClient, args: argparse.Namespace) -> int:
     return 0 if all_ok else 1
 
 
+def _bulk_targets(client: GitHubClient, args: argparse.Namespace) -> list[dict[str, Any]] | None:
+    """Resolve bulk targets; None (after printing an error) on usage problems."""
+    if sum([bool(args.repos), args.filter is not None, args.all]) != 1:
+        print("Error: pass repo names, --filter, or --all (exactly one).", file=sys.stderr)
+        return None
+    if args.repos:
+        return [client.get_repo(name) for name in args.repos]
+    repos = client.list_repos()
+    if args.all:
+        return repos
+    ft = args.filter.lower()
+    return [
+        r
+        for r in repos
+        if ft in (r.get("name") or "").lower() or ft in (r.get("description") or "").lower()
+    ]
+
+
+def _bulk_ops(args: argparse.Namespace) -> list[BulkOp]:
+    """Build the op list from bulk flags. Field flags collapse into one PATCH op."""
+    ops: list[BulkOp] = []
+    fields = build_edit_fields(args)
+    if args.archive:
+        fields["archived"] = True
+    if args.unarchive:
+        fields["archived"] = False
+    if fields:
+        desc = ", ".join(f"{k}={v!r}" for k, v in sorted(fields.items()))
+        ops.append(fields_op(fields, f"Update settings ({desc})"))
+    for t in args.add_topic:
+        ops.append(add_topic_op(t))
+    for t in args.remove_topic:
+        ops.append(remove_topic_op(t))
+    if args.vulnerability_alerts:
+        ops.append(vulnerability_alerts_op(args.vulnerability_alerts == "on"))
+    if args.security_fixes:
+        ops.append(security_fixes_op(args.security_fixes == "on"))
+    return ops
+
+
+def cli_bulk(client: GitHubClient, args: argparse.Namespace) -> int:
+    if client.capabilities.resolve("admin.write") is False:
+        hint = client.capabilities.hint("admin.write")
+        print(f"Error: token cannot write ({hint}).", file=sys.stderr)
+        return 1
+    if args.archive and args.unarchive:
+        print("Error: --archive and --unarchive are mutually exclusive.", file=sys.stderr)
+        return 2
+    topic_errors: list[str] = []
+    for raw in [*args.add_topic, *args.remove_topic]:
+        _valid, errs = normalize_topics(raw)
+        topic_errors += errs
+    if topic_errors:
+        for e in topic_errors:
+            print(f"Error: {e}", file=sys.stderr)
+        return 2
+
+    ops = _bulk_ops(args)
+    if not ops:
+        print("Error: no operation flags given (see gman bulk --help).", file=sys.stderr)
+        return 2
+    targets = _bulk_targets(client, args)
+    if targets is None:
+        return 2
+    if not targets:
+        print("No matching repositories.", file=sys.stderr)
+        return 1
+
+    print(f"Operations ({len(ops)}):")
+    for op in ops:
+        print(f"  • {op.label}")
+    print(f"Targets ({len(targets)}):")
+    for repo in targets[:20]:
+        print(f"  {repo['full_name']}")
+    if len(targets) > 20:
+        print(f"  … and {len(targets) - 20} more")
+    if args.dry_run:
+        print("Dry run — nothing changed.")
+        return 0
+    if not args.yes:
+        confirm = input("Proceed? [y/N] ").strip().lower()
+        if confirm not in ("y", "yes"):
+            print("Cancelled.")
+            return 1
+
+    err = Console(stderr=True)
+    with err.status("Applying…") as status:
+        results = run_bulk(
+            client,
+            targets,
+            ops,
+            progress=lambda done, total: status.update(f"Applied {done}/{total} repositories…"),
+        )
+    failures = 0
+    for r in results:
+        glyph = "⏭" if r.skipped else ("✅" if r.ok else "❌")
+        print(f"{glyph} {r.full_name}: {r.msg}")
+        if not r.ok:
+            failures += 1
+    if failures:
+        print(f"{failures} of {len(results)} operations failed or were skipped.", file=sys.stderr)
+        return 1
+    return 0
+
+
 def cli_auth(client: GitHubClient, probe: bool) -> int:
     login = client.whoami()  # also captures X-OAuth-Scopes on the first response
     if login is None:
@@ -399,6 +513,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_edit.add_argument("repo_name", help="username/repo")
     _add_field_flags(p_edit, bulk=False)
 
+    p_bulk = sub.add_parser("bulk", help="Apply settings to many repos at once.")
+    p_bulk.add_argument("repos", nargs="*", help="Explicit username/repo targets.")
+    p_bulk.add_argument("--filter", help="Substring filter on name/description.")
+    p_bulk.add_argument("--all", action="store_true", help="Target every repo you own.")
+    p_bulk.add_argument("--archive", action="store_true", help="Archive targets.")
+    p_bulk.add_argument("--unarchive", action="store_true", help="Unarchive targets.")
+    p_bulk.add_argument(
+        "--vulnerability-alerts", dest="vulnerability_alerts", choices=["on", "off"]
+    )
+    p_bulk.add_argument("--security-fixes", dest="security_fixes", choices=["on", "off"])
+    p_bulk.add_argument("--dry-run", action="store_true", help="List targets and exit.")
+    p_bulk.add_argument("--yes", "-y", action="store_true", help="Skip confirmation.")
+    _add_field_flags(p_bulk, bulk=True)
+
     p_info = sub.add_parser("info", help="Show detailed info for one repo.")
     p_info.add_argument("repo_name", help="username/repo")
     p_info.add_argument("--json", dest="as_json", action="store_true")
@@ -440,6 +568,8 @@ def main(argv: list[str] | None = None) -> int:
             return cli_describe(client, args.repo_name, args.description)
         if args.command == "edit":
             return cli_edit(client, args)
+        if args.command == "bulk":
+            return cli_bulk(client, args)
         if args.command == "info":
             return cli_info(client, args.repo_name, args.as_json)
         if args.command == "auth":
