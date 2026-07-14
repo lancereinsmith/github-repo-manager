@@ -19,6 +19,14 @@ def make_repo(name: str, **overrides: Any) -> dict[str, Any]:
         "forks_count": 0,
         "updated_at": "2026-01-01T00:00:00Z",
         "html_url": f"https://github.com/octocat/{name}",
+        "open_issues_count": 0,
+        "default_branch": "main",
+        "size": 128,
+        "watchers_count": 0,
+        "topics": [],
+        "license": None,
+        "created_at": "2025-01-01T00:00:00Z",
+        "pushed_at": "2026-01-01T00:00:00Z",
     }
     repo.update(overrides)
     return repo

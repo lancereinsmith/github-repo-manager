@@ -1,0 +1,263 @@
+"""Per-repo detail fetching, delete warnings, backup, and shared rendering."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from rich.table import Table
+
+from gman.client import GitHubClient, GitHubError
+
+# detail field -> capability family (for hint lookup on denial)
+FIELD_FAMILIES: dict[str, str] = {
+    "languages": "metadata.read",
+    "latest_release": "contents.read",
+    "latest_run": "actions.read",
+    "pages": "pages.read",
+    "traffic": "admin.read",
+    "open_prs": "pulls.read",
+}
+
+
+@dataclass
+class RepoDetails:
+    """Everything the detail panel / `gman info` shows for one repo."""
+
+    repo: dict[str, Any]
+    languages: dict[str, int] | None = None
+    latest_release: dict[str, Any] | None = None
+    latest_run: dict[str, Any] | None = None
+    pages: dict[str, Any] | None = None
+    traffic: dict[str, int] | None = None
+    open_prs: int | None = None
+    hints: dict[str, str] = field(default_factory=dict)  # field name -> denial hint
+
+    @property
+    def open_issues(self) -> int | None:
+        """Open issues = repo's combined open count minus open PRs."""
+        if self.open_prs is None:
+            return None
+        return max(0, (self.repo.get("open_issues_count") or 0) - self.open_prs)
+
+
+def fetch_details(client: GitHubClient, repo: dict[str, Any]) -> RepoDetails:
+    """Fetch all detail fields concurrently; each degrades independently."""
+    full = repo["full_name"]
+    tasks: dict[str, Callable[[], Any]] = {
+        "languages": lambda: client.get_languages(full),
+        "latest_release": lambda: client.get_latest_release(full),
+        "latest_run": lambda: client.get_latest_workflow_run(full),
+        "pages": lambda: client.get_pages_info(full),
+        "traffic": lambda: client.get_traffic(full),
+        "open_prs": lambda: client.get_open_pr_count(full),
+    }
+    details = RepoDetails(repo=repo)
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = {name: pool.submit(fn) for name, fn in tasks.items()}
+        for name, fut in futures.items():
+            try:
+                value = fut.result()
+            except GitHubError as e:
+                details.hints[name] = f"error: {e}"
+                continue
+            setattr(details, name, value)
+            if value is None and client.capabilities.resolve(FIELD_FAMILIES[name]) is False:
+                details.hints[name] = client.capabilities.hint(FIELD_FAMILIES[name])
+    return details
+
+
+def build_delete_warnings(repo: dict[str, Any], pinned: set[str]) -> list[str]:
+    """Compose human warnings shown before a repo is deleted."""
+    warnings: list[str] = []
+    forks = repo.get("forks_count") or 0
+    if forks:
+        s = "s" if forks != 1 else ""
+        warnings.append(f"⚠ has {forks} fork{s} (they survive, but lose their upstream)")
+    stars = repo.get("stargazers_count") or 0
+    if stars:
+        s = "s" if stars != 1 else ""
+        warnings.append(f"★ {stars} star{s}")
+    if repo.get("full_name") in pinned:
+        warnings.append("📌 pinned on your profile")
+    if not repo.get("private"):
+        warnings.append("🌐 public repo")
+    return warnings
+
+
+def unique_path(path: Path) -> Path:
+    """Return `path`, or the first `-N`-suffixed variant that doesn't exist."""
+    if not path.exists():
+        return path
+    stem = path.name.removesuffix(".tar.gz")
+    n = 1
+    while True:
+        candidate = path.with_name(f"{stem}-{n}.tar.gz")
+        if not candidate.exists():
+            return candidate
+        n += 1
+
+
+def backup_repo(client: GitHubClient, repo: dict[str, Any], dest_dir: Path) -> Path:
+    """Download `{name}-{default_branch}.tar.gz` into `dest_dir`; returns the path."""
+    branch = repo.get("default_branch") or "HEAD"
+    dest = unique_path(dest_dir / f"{repo['name']}-{branch}.tar.gz")
+    return client.download_tarball(repo["full_name"], branch, dest)
+
+
+def probe_capabilities(client: GitHubClient) -> None:
+    """Resolve unknown READ families with one cheap call each against the newest repo.
+
+    Write families cannot be probed non-destructively and stay unknown.
+    """
+    r = client._request(
+        "GET",
+        "/user/repos",
+        params={"per_page": 1, "sort": "updated", "affiliation": "owner"},
+    )
+    r.raise_for_status()
+    batch = r.json()
+    if not batch:
+        return
+    full = batch[0]["full_name"]
+    client.get_readme(full)
+    client.get_latest_workflow_run(full)
+    client.get_pages_info(full)
+    client.get_traffic(full)
+    client.get_open_pr_count(full)
+
+
+def _fmt_date(value: str | None) -> str:
+    return (value or "")[:10] or "—"
+
+
+def render_details(details: RepoDetails) -> Table:
+    """Two-column Rich grid shared by `gman info` and the TUI detail screen."""
+    repo = details.repo
+
+    def dash(field_name: str) -> str:
+        hint = details.hints.get(field_name)
+        return f"— [dim]({hint})[/dim]" if hint else "—"
+
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="bold", no_wrap=True)
+    grid.add_column(overflow="fold")
+
+    badges = []
+    if repo.get("archived"):
+        badges.append("📦 archived")
+    vis = "🔒 private" if repo.get("private") else "🌐 public"
+    grid.add_row("Repository", f"{repo.get('full_name', '')}  {vis} {' '.join(badges)}")
+    grid.add_row("Description", repo.get("description") or "—")
+    topics = repo.get("topics") or []
+    grid.add_row("Topics", ", ".join(topics) if topics else "—")
+    lic = repo.get("license") or {}
+    grid.add_row(
+        "Facts",
+        f"★ {repo.get('stargazers_count', 0)}  ⑂ {repo.get('forks_count', 0)}  "
+        f"size {repo.get('size', 0)} KB  license {lic.get('spdx_id') or '—'}  "
+        f"branch {repo.get('default_branch') or '—'}",
+    )
+    grid.add_row(
+        "Dates",
+        f"created {_fmt_date(repo.get('created_at'))}  "
+        f"updated {_fmt_date(repo.get('updated_at'))}  "
+        f"pushed {_fmt_date(repo.get('pushed_at'))}",
+    )
+
+    if details.languages:
+        total = sum(details.languages.values()) or 1
+        top = sorted(details.languages.items(), key=lambda kv: -kv[1])[:5]
+        grid.add_row("Languages", "  ".join(f"{k} {v * 100 // total}%" for k, v in top))
+    else:
+        grid.add_row("Languages", dash("languages"))
+
+    lr = details.latest_release
+    grid.add_row(
+        "Latest release",
+        f"{lr.get('tag_name')} — {_fmt_date(lr.get('published_at'))}"
+        if lr
+        else dash("latest_release"),
+    )
+
+    run = details.latest_run
+    if run:
+        glyph = {"success": "✅", "failure": "❌"}.get(run.get("conclusion") or "", "…")
+        grid.add_row(
+            "Latest CI run",
+            f"{glyph} {run.get('name') or 'workflow'} "
+            f"({run.get('conclusion') or run.get('status')}) {_fmt_date(run.get('created_at'))}",
+        )
+    else:
+        grid.add_row("Latest CI run", dash("latest_run"))
+
+    grid.add_row(
+        "Pages",
+        details.pages.get("html_url", "—") if details.pages else dash("pages"),
+    )
+
+    t = details.traffic
+    grid.add_row(
+        "Traffic (14d)",
+        f"{t['views']} views ({t['unique_views']} unique), "
+        f"{t['clones']} clones ({t['unique_clones']} unique)"
+        if t
+        else dash("traffic"),
+    )
+
+    if details.open_prs is not None:
+        grid.add_row("Open items", f"{details.open_issues} issues / {details.open_prs} PRs")
+    else:
+        grid.add_row("Open items", dash("open_prs"))
+    return grid
+
+
+def details_to_dict(details: RepoDetails) -> dict[str, Any]:
+    """JSON-safe projection for `gman info --json` (unavailable fields are null)."""
+    repo = details.repo
+    lr = details.latest_release
+    run = details.latest_run
+    return {
+        "name": repo.get("name"),
+        "full_name": repo.get("full_name"),
+        "description": repo.get("description"),
+        "private": repo.get("private"),
+        "archived": repo.get("archived"),
+        "visibility": repo.get("visibility"),
+        "default_branch": repo.get("default_branch"),
+        "stargazers_count": repo.get("stargazers_count"),
+        "forks_count": repo.get("forks_count"),
+        "size": repo.get("size"),
+        "topics": repo.get("topics") or [],
+        "created_at": repo.get("created_at"),
+        "updated_at": repo.get("updated_at"),
+        "pushed_at": repo.get("pushed_at"),
+        "html_url": repo.get("html_url"),
+        "languages": details.languages,
+        "latest_release": (
+            {
+                "tag": lr.get("tag_name"),
+                "name": lr.get("name"),
+                "published_at": lr.get("published_at"),
+            }
+            if lr
+            else None
+        ),
+        "latest_run": (
+            {
+                "name": run.get("name"),
+                "status": run.get("status"),
+                "conclusion": run.get("conclusion"),
+                "created_at": run.get("created_at"),
+            }
+            if run
+            else None
+        ),
+        "pages_url": details.pages.get("html_url") if details.pages else None,
+        "traffic": details.traffic,
+        "open_prs": details.open_prs,
+        "open_issues": details.open_issues,
+    }
