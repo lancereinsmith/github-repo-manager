@@ -6,7 +6,7 @@ import pytest
 import responses
 from conftest import make_repo
 
-from gman.client import DEFAULT_API_URL, GitHubClient, RateLimitError
+from gman.client import DEFAULT_API_URL, GitHubClient, GitHubError, RateLimitError
 
 
 @pytest.fixture
@@ -204,3 +204,49 @@ def test_scopes_still_captured_after_failed_first_request(client: GitHubClient) 
     client._request("GET", "/repos/o/r")  # 404: not ok, must not latch
     client.whoami()
     assert client.token_info.scopes == {"repo"}
+
+
+@responses.activate
+def test_get_repo_success_and_failure(client: GitHubClient) -> None:
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/r", json=make_repo("r"), status=200)
+    assert client.get_repo("o/r")["name"] == "r"
+
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/gone", status=404)
+    with pytest.raises(GitHubError, match="404"):
+        client.get_repo("o/gone")
+
+
+@responses.activate
+def test_get_readme_raw(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/o/r/readme",
+        body="# Hello\n",
+        status=200,
+    )
+    assert client.get_readme("o/r") == "# Hello\n"
+    # raw media type requested
+    assert responses.calls[0].request.headers["Accept"] == "application/vnd.github.raw+json"
+
+
+@responses.activate
+def test_get_readme_missing_returns_none(client: GitHubClient) -> None:
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/r/readme", status=404)
+    assert client.get_readme("o/r") is None
+
+
+@responses.activate
+def test_get_languages(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/o/r/languages",
+        json={"Python": 1000, "Shell": 50},
+        status=200,
+    )
+    assert client.get_languages("o/r") == {"Python": 1000, "Shell": 50}
+
+
+@responses.activate
+def test_get_latest_release_none_when_absent(client: GitHubClient) -> None:
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/r/releases/latest", status=404)
+    assert client.get_latest_release("o/r") is None

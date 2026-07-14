@@ -237,3 +237,29 @@ class GitHubClient:
         if r.status_code == 200:
             return True, f"Updated description for {full_name}"
         return False, f"HTTP {r.status_code}: {r.text[:160]}"
+
+    def get_repo(self, full_name: str) -> dict[str, Any]:
+        """Fetch a single repository object. Raises `GitHubError` on failure."""
+        r = self._request("GET", f"/repos/{full_name}")
+        if r.status_code != 200:
+            raise GitHubError(f"Cannot fetch {full_name}: HTTP {r.status_code}: {r.text[:160]}")
+        return r.json()
+
+    def get_readme(self, full_name: str) -> str | None:
+        """Return the repo README as raw markdown text, or `None`."""
+        r = self._get_optional(
+            "contents.read",
+            f"/repos/{full_name}/readme",
+            headers={"Accept": "application/vnd.github.raw+json"},
+        )
+        return r.text if r is not None else None
+
+    def get_languages(self, full_name: str) -> dict[str, int] | None:
+        """Return language → bytes for the repo, or `None`."""
+        r = self._get_optional("metadata.read", f"/repos/{full_name}/languages")
+        return r.json() if r is not None else None
+
+    def get_latest_release(self, full_name: str) -> dict[str, Any] | None:
+        """Return the latest published release, or `None` if there are none."""
+        r = self._get_optional("contents.read", f"/repos/{full_name}/releases/latest")
+        return r.json() if r is not None else None
