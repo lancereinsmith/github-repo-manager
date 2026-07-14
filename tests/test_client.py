@@ -452,6 +452,20 @@ def test_update_repo_403_marks_admin_write_denied(client: GitHubClient) -> None:
 
 
 @responses.activate
+def test_archived_403_does_not_mark_denied(client: GitHubClient) -> None:
+    """State-based 403s (archived repo) must not poison the capability cache."""
+    responses.add(
+        responses.PATCH,
+        f"{DEFAULT_API_URL}/repos/o/r",
+        json={"message": "Repository was archived so is read-only."},
+        status=403,
+    )
+    ok, msg = client.update_repo("o/r", {"has_wiki": False})
+    assert not ok and "403" in msg
+    assert client.capabilities.resolve("admin.write") is None  # NOT False
+
+
+@responses.activate
 def test_mutate_rate_limit_propagates(client: GitHubClient) -> None:
     responses.add(
         responses.PATCH,

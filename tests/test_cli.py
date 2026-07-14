@@ -426,3 +426,19 @@ def test_bulk_denied_write_capability_errors(capsys) -> None:
     rc = cli.cli_bulk(fake, _bulk_args("--all", "--wiki", "off", "--yes"))
     assert rc == 1
     assert "cannot write" in capsys.readouterr().err
+
+
+def test_bulk_add_topic_applies_normalized(capsys) -> None:
+    """--add-topic Python must apply 'python' (and 'a,b' splits into two ops)."""
+    fake = _BulkFakeClient([make_repo("a", topics=["old"])])
+    fake.topic_calls: list = []
+
+    def set_topics(full, topics):
+        fake.topic_calls.append((full, topics))
+        return True, f"Set {len(topics)} topics on {full}"
+
+    fake.set_topics = set_topics
+    rc = cli.cli_bulk(fake, _bulk_args("--all", "--add-topic", "Python", "--yes"))
+
+    assert rc == 0
+    assert fake.topic_calls == [("octocat/a", ["old", "python"])]

@@ -683,14 +683,14 @@ class GitHubRepoApp(App[None]):
                 return
             topics, errors = normalize_topics(raw)
             if errors:
-                self.notify("; ".join(errors), severity="error")
+                self.notify(escape("; ".join(errors)), severity="error")
                 return
             ok, msg = self.client.set_topics(full, topics)
             if ok:
                 repo["topics"] = topics
                 self.notify(msg)
             else:
-                self.notify(f"Update failed: {msg}", severity="error")
+                self.notify(f"Update failed: {escape(msg)}", severity="error")
 
         self.push_screen(EditTopicsScreen(full, current), after)
 
@@ -710,7 +710,7 @@ class GitHubRepoApp(App[None]):
                 repo["homepage"] = url
                 self.notify(msg)
             else:
-                self.notify(f"Update failed: {msg}", severity="error")
+                self.notify(f"Update failed: {escape(msg)}", severity="error")
 
         self.push_screen(EditHomepageScreen(full, current), after)
 

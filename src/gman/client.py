@@ -44,6 +44,12 @@ def _gh_cli_token() -> str | None:
     return r.stdout.strip() or None
 
 
+def _is_state_403(r: requests.Response) -> bool:
+    """True when a 403 reflects resource state (archived/read-only), not authorization."""
+    text = r.text[:500].lower()
+    return "archived" in text or "read-only" in text
+
+
 def _rate_limit_message(reset: str | None) -> str:
     if reset:
         try:
@@ -175,7 +181,7 @@ class GitHubClient:
             raise
         except GitHubError as e:
             return False, str(e)
-        if r.status_code == 403:
+        if r.status_code == 403 and not _is_state_403(r):
             self.capabilities.mark(family, False)
         if r.status_code in ok_codes:
             self.capabilities.mark(family, True)

@@ -1,4 +1,4 @@
-"""Command-line entry point: `list`, `delete`, `archive`, `describe`, `excel`, `tui`."""
+"""Command-line entry point: list, delete, archive, describe, edit, bulk, info, auth, excel, tui"""
 
 from __future__ import annotations
 
@@ -346,7 +346,9 @@ def _bulk_targets(client: GitHubClient, args: argparse.Namespace) -> list[dict[s
     ]
 
 
-def _bulk_ops(args: argparse.Namespace) -> list[BulkOp]:
+def _bulk_ops(
+    args: argparse.Namespace, add_topics: list[str], remove_topics: list[str]
+) -> list[BulkOp]:
     """Build the op list from bulk flags. Field flags collapse into one PATCH op."""
     ops: list[BulkOp] = []
     fields = build_edit_fields(args)
@@ -357,9 +359,9 @@ def _bulk_ops(args: argparse.Namespace) -> list[BulkOp]:
     if fields:
         desc = ", ".join(f"{k}={v!r}" for k, v in sorted(fields.items()))
         ops.append(fields_op(fields, f"Update settings ({desc})"))
-    for t in args.add_topic:
+    for t in add_topics:
         ops.append(add_topic_op(t))
-    for t in args.remove_topic:
+    for t in remove_topics:
         ops.append(remove_topic_op(t))
     if args.vulnerability_alerts:
         ops.append(vulnerability_alerts_op(args.vulnerability_alerts == "on"))
@@ -376,16 +378,23 @@ def cli_bulk(client: GitHubClient, args: argparse.Namespace) -> int:
     if args.archive and args.unarchive:
         print("Error: --archive and --unarchive are mutually exclusive.", file=sys.stderr)
         return 2
+    add_topics: list[str] = []
+    remove_topics: list[str] = []
     topic_errors: list[str] = []
-    for raw in [*args.add_topic, *args.remove_topic]:
-        _valid, errs = normalize_topics(raw)
+    for raw in args.add_topic:
+        valid, errs = normalize_topics(raw)
+        add_topics += valid
+        topic_errors += errs
+    for raw in args.remove_topic:
+        valid, errs = normalize_topics(raw)
+        remove_topics += valid
         topic_errors += errs
     if topic_errors:
         for e in topic_errors:
             print(f"Error: {e}", file=sys.stderr)
         return 2
 
-    ops = _bulk_ops(args)
+    ops = _bulk_ops(args, add_topics, remove_topics)
     if not ops:
         print("Error: no operation flags given (see gman bulk --help).", file=sys.stderr)
         return 2
