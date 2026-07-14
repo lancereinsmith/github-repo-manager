@@ -130,6 +130,23 @@ def test_run_bulk_rate_limit_aborts_remainder(client: GitHubClient) -> None:
     assert "rate limit" in results[2].msg
 
 
+def test_run_bulk_progress_still_fires_after_abort(client: GitHubClient) -> None:
+    """Progress reaches total even when an abort skips the tail (UIs rely on this)."""
+    from gman.client import RateLimitError
+
+    repos = [make_repo("a"), make_repo("b"), make_repo("c")]
+
+    def apply(cl: GitHubClient, repo: dict) -> tuple[bool, str]:
+        if repo["full_name"] == "octocat/a":
+            raise RateLimitError("rate limit exceeded")
+        return True, "ok"
+
+    seen: list[tuple[int, int]] = []
+    run_bulk(client, repos, [BulkOp("t", "Op", apply)], progress=lambda d, t: seen.append((d, t)))
+
+    assert seen == [(1, 3), (2, 3), (3, 3)]
+
+
 def test_run_bulk_empty_inputs(client: GitHubClient) -> None:
     assert run_bulk(client, [], [_op("x", {})]) == []
     assert run_bulk(client, [make_repo("a")], []) == []

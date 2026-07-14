@@ -169,7 +169,8 @@ def run_bulk(
     GitHub's secondary rate limits punish concurrent writes — never
     parallelize this. Per-op failures are recorded and the run continues; a
     `RateLimitError` aborts the run and the remaining pairs are recorded as
-    `skipped=True` with the rate-limit message.
+    `skipped=True` with the rate-limit message. `progress` fires for every repo,
+    including skipped ones, so callers' progress displays always reach `total`.
     """
     if not repos or not ops:
         return []
