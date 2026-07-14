@@ -14,10 +14,16 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import DataTable, Footer, Header, Input, Label, Markdown, Static
+from textual.widgets import Checkbox, DataTable, Footer, Header, Input, Label, Markdown, Static
 
-from gman.client import GitHubClient
-from gman.details import RepoDetails, fetch_details, render_details
+from gman.client import GitHubClient, GitHubError
+from gman.details import (
+    RepoDetails,
+    backup_repo,
+    build_delete_warnings,
+    fetch_details,
+    render_details,
+)
 from gman.excel import DEFAULT_EXCEL_FILE, write_excel
 
 
@@ -44,8 +50,8 @@ def row_for_repo(
     )
 
 
-class ConfirmDeleteScreen(ModalScreen[bool]):
-    """Modal that requires the user to retype the full name to confirm."""
+class ConfirmDeleteScreen(ModalScreen[tuple[bool, bool] | None]):
+    """Modal that requires retyping the full name; returns (confirmed, backup)."""
 
     DEFAULT_CSS = """
     ConfirmDeleteScreen { align: center middle; }
@@ -56,27 +62,37 @@ class ConfirmDeleteScreen(ModalScreen[bool]):
         padding: 1 2;
     }
     #title { color: $error; text-style: bold; }
+    #warnings { color: $warning; }
     #hint  { color: $text-muted; margin-bottom: 1; }
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancel")]
 
-    def __init__(self, full_name: str) -> None:
+    def __init__(self, full_name: str, warnings: list[str] | None = None) -> None:
         super().__init__()
         self.full_name = full_name
+        self.warnings = warnings or []
 
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
             yield Label(f"Delete {self.full_name}?", id="title")
+            if self.warnings:
+                yield Label("\n".join(self.warnings), id="warnings")
+            yield Checkbox("Backup tarball first (git contents only)", id="backup")
             yield Label("Type the full name to confirm (esc to cancel):", id="hint")
             yield Input(placeholder=self.full_name, id="confirm")
 
+    def on_mount(self) -> None:
+        self.query_one("#confirm", Input).focus()
+
     @on(Input.Submitted)
     def _submit(self, event: Input.Submitted) -> None:
-        self.dismiss(event.value.strip() == self.full_name)
+        confirmed = event.value.strip() == self.full_name
+        backup = self.query_one("#backup", Checkbox).value
+        self.dismiss((confirmed, backup))
 
     def action_cancel(self) -> None:
-        self.dismiss(False)
+        self.dismiss(None)
 
 
 class FilterScreen(ModalScreen[str]):
@@ -365,21 +381,35 @@ class GitHubRepoApp(App[None]):
         repo = self._selected_repo()
         if not repo:
             return
-        full = repo["full_name"]
+        warnings = build_delete_warnings(repo, self.pinned)
 
-        def after(confirmed: bool | None) -> None:
-            if not confirmed:
+        def after(result: tuple[bool, bool] | None) -> None:
+            if not result or not result[0]:
                 self.notify("Cancelled")
                 return
-            ok, msg = self.client.delete_repo(full)
-            if ok:
-                self.all_repos = [r for r in self.all_repos if r["full_name"] != full]
-                self.refresh_table()
-                self.notify(msg, severity="warning")
-            else:
-                self.notify(f"Delete failed: {msg}", severity="error")
+            self._delete_worker(repo, backup=result[1])
 
-        self.push_screen(ConfirmDeleteScreen(full), after)
+        self.push_screen(ConfirmDeleteScreen(repo["full_name"], warnings), after)
+
+    @work(thread=True)
+    def _delete_worker(self, repo: dict[str, Any], backup: bool) -> None:
+        full = repo["full_name"]
+        if backup:
+            try:
+                path = backup_repo(self.client, repo, Path.cwd())
+            except GitHubError as e:
+                self.call_from_thread(
+                    self.notify, f"Backup failed — deletion aborted: {e}", severity="error"
+                )
+                return
+            self.call_from_thread(self.notify, f"Backed up to {path.name}")
+        ok, msg = self.client.delete_repo(full)
+        if ok:
+            self.all_repos = [r for r in self.all_repos if r["full_name"] != full]
+            self.call_from_thread(self.refresh_table)
+            self.call_from_thread(self.notify, msg, severity="warning")
+        else:
+            self.call_from_thread(self.notify, f"Delete failed: {msg}", severity="error")
 
     def action_toggle_archive(self) -> None:
         repo = self._selected_repo()
