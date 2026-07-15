@@ -106,6 +106,18 @@ def security_fixes_op(enabled: bool) -> BulkOp:
     )
 
 
+def sync_fork_op() -> BulkOp:
+    """Sync forks with their upstream default branch; non-forks are skipped."""
+
+    def apply(client: GitHubClient, repo: dict[str, Any]) -> tuple[bool, str]:
+        if not repo.get("fork"):
+            return True, f"{repo['full_name']} is not a fork — skipped"
+        branch = repo.get("default_branch") or "HEAD"
+        return client.merge_upstream(repo["full_name"], branch)
+
+    return BulkOp("sync_fork", "Sync fork with upstream", apply)
+
+
 # (key, label, needs_topic) — display order for the TUI bulk menu.
 TUI_BULK_MENU: list[tuple[str, str, bool]] = [
     ("archive", "Archive", False),
@@ -124,6 +136,7 @@ TUI_BULK_MENU: list[tuple[str, str, bool]] = [
     ("vuln_off", "Vulnerability alerts → OFF", False),
     ("secfix_on", "Automated security fixes → ON", False),
     ("secfix_off", "Automated security fixes → OFF", False),
+    ("sync_fork", "Sync fork with upstream", False),
 ]
 
 
@@ -148,6 +161,7 @@ def build_menu_op(key: str, arg: str | None = None) -> BulkOp:
         "vuln_off": vulnerability_alerts_op(False),
         "secfix_on": security_fixes_op(True),
         "secfix_off": security_fixes_op(False),
+        "sync_fork": sync_fork_op(),
     }
     if key in simple:
         return simple[key]

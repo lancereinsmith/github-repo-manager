@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json as jsonlib
+
 import pytest
 import responses
 from conftest import make_repo
@@ -51,8 +53,6 @@ def test_add_topic_op_appends_to_current(client: GitHubClient) -> None:
     ok, _ = add_topic_op("new").apply(client, repo)
 
     assert ok
-    import json as jsonlib
-
     assert jsonlib.loads(responses.calls[0].request.body) == {"names": ["existing", "new"]}
 
 
@@ -150,3 +150,32 @@ def test_run_bulk_progress_still_fires_after_abort(client: GitHubClient) -> None
 def test_run_bulk_empty_inputs(client: GitHubClient) -> None:
     assert run_bulk(client, [], [_op("x", {})]) == []
     assert run_bulk(client, [make_repo("a")], []) == []
+
+
+def test_sync_fork_op_skips_non_forks(client: GitHubClient) -> None:
+    from gman.bulk import sync_fork_op
+
+    ok, msg = sync_fork_op().apply(client, make_repo("r"))  # fork=False, no mock registered
+    assert ok and "skipped" in msg
+
+
+@responses.activate
+def test_sync_fork_op_merges_forks(client: GitHubClient) -> None:
+    from gman.bulk import sync_fork_op
+
+    responses.add(
+        responses.POST,
+        f"{DEFAULT_API_URL}/repos/octocat/f/merge-upstream",
+        json={"merge_type": "fast-forward"},
+        status=200,
+    )
+    ok, msg = sync_fork_op().apply(client, make_repo("f", fork=True))
+    assert ok and "Synced" in msg
+    assert jsonlib.loads(responses.calls[0].request.body) == {"branch": "main"}
+
+
+def test_menu_includes_sync_fork() -> None:
+    from gman.bulk import TUI_BULK_MENU, build_menu_op
+
+    assert ("sync_fork", "Sync fork with upstream", False) in TUI_BULK_MENU
+    assert build_menu_op("sync_fork").label == "Sync fork with upstream"

@@ -20,6 +20,7 @@ from gman.bulk import (
     remove_topic_op,
     run_bulk,
     security_fixes_op,
+    sync_fork_op,
     vulnerability_alerts_op,
 )
 from gman.capabilities import ALL_FAMILIES
@@ -370,6 +371,8 @@ def _bulk_ops(
         ops.append(vulnerability_alerts_op(args.vulnerability_alerts == "on"))
     if args.security_fixes:
         ops.append(security_fixes_op(args.security_fixes == "on"))
+    if args.sync_fork:
+        ops.append(sync_fork_op())
     return ops
 
 
@@ -546,6 +549,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--vulnerability-alerts", dest="vulnerability_alerts", choices=["on", "off"]
     )
     p_bulk.add_argument("--security-fixes", dest="security_fixes", choices=["on", "off"])
+    p_bulk.add_argument("--sync-fork", action="store_true", help="Sync forks with upstream.")
     p_bulk.add_argument("--dry-run", action="store_true", help="List targets and exit.")
     p_bulk.add_argument("--yes", "-y", action="store_true", help="Skip confirmation.")
     _add_field_flags(p_bulk, bulk=True)

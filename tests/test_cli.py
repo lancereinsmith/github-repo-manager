@@ -444,6 +444,23 @@ def test_bulk_add_topic_applies_normalized(capsys) -> None:
     assert fake.topic_calls == [("octocat/a", ["old", "python"])]
 
 
+def test_bulk_sync_fork_flag(capsys) -> None:
+    fake = _BulkFakeClient([make_repo("a"), make_repo("f", fork=True)])
+    fake.synced: list = []
+
+    def merge_upstream(full, branch):
+        fake.synced.append((full, branch))
+        return True, f"Synced {full} with upstream"
+
+    fake.merge_upstream = merge_upstream
+    rc = cli.cli_bulk(fake, _bulk_args("--all", "--sync-fork", "--yes"))
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert fake.synced == [("octocat/f", "main")]  # only the fork
+    assert "skipped" in out  # the non-fork line
+
+
 def test_sync_happy_path(capsys) -> None:
     class FakeClient:
         def get_repo(self, full):
