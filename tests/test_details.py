@@ -146,6 +146,8 @@ def test_probe_capabilities_marks_read_families(client: GitHubClient) -> None:
     assert caps.resolve("pages.read") is True  # 404 = authz passed
     assert caps.resolve("admin.read") is False
     assert caps.resolve("pulls.read") is True
+    assert caps.resolve("dependabot.read") is True
+    assert caps.resolve("secret_scanning.read") is True  # 404 = authz passed
 
 
 @responses.activate

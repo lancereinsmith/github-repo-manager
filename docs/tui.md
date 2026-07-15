@@ -80,7 +80,7 @@ is aborted.
 
 `space` marks repos (✓ column); the subtitle shows the count. `b` opens the
 bulk menu — archive/unarchive, feature toggles, delete-branch-on-merge,
-add/remove a topic, and Dependabot alert/fix toggles. A confirmation screen
+add/remove a topic, Dependabot alert/fix toggles, and syncing forks with upstream. A confirmation screen
 shows the operation and target list (`y` to proceed). Operations run one repo
 at a time; the subtitle tracks progress and a notification summarizes
 ok/failed/skipped. The list refreshes when done.
