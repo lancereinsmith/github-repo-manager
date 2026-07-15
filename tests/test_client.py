@@ -572,3 +572,38 @@ def test_vulnerability_alerts_enabled_tristate(client: GitHubClient) -> None:
     assert client.get_vulnerability_alerts_enabled("o/off") is False
     assert client.get_vulnerability_alerts_enabled("o/no") is None
     assert client.capabilities.resolve("admin.read") is False
+
+
+@responses.activate
+def test_compare_returns_counts(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/o/fork/compare/upstream:main...main",
+        json={"ahead_by": 2, "behind_by": 14, "status": "diverged"},
+        status=200,
+    )
+    cmp = client.compare("o/fork", "upstream:main...main")
+    assert cmp is not None and cmp["behind_by"] == 14
+
+
+@responses.activate
+def test_merge_upstream_success_and_conflict(client: GitHubClient) -> None:
+    responses.add(
+        responses.POST,
+        f"{DEFAULT_API_URL}/repos/o/fork/merge-upstream",
+        json={"message": "Successfully fetched and fast-forwarded", "merge_type": "fast-forward"},
+        status=200,
+    )
+    ok, msg = client.merge_upstream("o/fork", "main")
+    assert ok and msg == "Synced o/fork with upstream"
+    assert jsonlib.loads(responses.calls[0].request.body) == {"branch": "main"}
+    assert client.capabilities.resolve("contents.write") is True
+
+    responses.add(
+        responses.POST,
+        f"{DEFAULT_API_URL}/repos/o/fork/merge-upstream",
+        json={"message": "There are merge conflicts"},
+        status=409,
+    )
+    ok2, msg2 = client.merge_upstream("o/fork", "main")
+    assert not ok2 and "409" in msg2

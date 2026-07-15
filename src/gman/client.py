@@ -436,3 +436,24 @@ class GitHubClient:
             ok_codes=(204,),
             success_msg=f"{verb} automated security fixes on {full_name}",
         )
+
+    def compare(self, full_name: str, basehead: str) -> dict[str, Any] | None:
+        """Compare two refs (supports cross-fork `owner:branch...branch`), or `None`."""
+        r = self._get_optional(
+            "contents.read", f"/repos/{full_name}/compare/{basehead}", params={"per_page": 1}
+        )
+        return r.json() if r is not None else None
+
+    def merge_upstream(self, full_name: str, branch: str) -> tuple[bool, str]:
+        """Sync a fork's branch with its upstream. Returns `(ok, message)`.
+
+        A 409 means merge conflicts that must be resolved locally.
+        """
+        return self._mutate(
+            "POST",
+            f"/repos/{full_name}/merge-upstream",
+            ok_codes=(200,),
+            success_msg=f"Synced {full_name} with upstream",
+            family="contents.write",
+            json={"branch": branch},
+        )
