@@ -188,7 +188,9 @@ def probe_capabilities(client: GitHubClient) -> None:
     client.get_readme(full)
     client.get_latest_workflow_run(full)
     client.get_pages_info(full)
-    client.get_traffic(full)
+    # admin.read is probed via the vulnerability-alerts check, not traffic:
+    # traffic 403s conflate missing push access and never teach the cache.
+    client.get_vulnerability_alerts_enabled(full)
     client.get_open_pr_count(full)
     client.get_open_dependabot_alert_count(full)
     client.get_open_secret_alert_count(full)

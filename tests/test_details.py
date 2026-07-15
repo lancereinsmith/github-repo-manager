@@ -197,7 +197,7 @@ def test_probe_capabilities_marks_read_families(client: GitHubClient) -> None:
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/readme", body="# x", status=200)
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/actions/runs", status=403)
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/pages", status=404)
-    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/traffic/views", status=403)
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/vulnerability-alerts", status=403)
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/pulls", json=[], status=200)
     responses.add(
         responses.GET,
@@ -215,9 +215,9 @@ def test_probe_capabilities_marks_read_families(client: GitHubClient) -> None:
     assert caps.resolve("contents.read") is True
     assert caps.resolve("actions.read") is False
     assert caps.resolve("pages.read") is True  # 404 = authz passed
-    # Traffic 403s no longer teach the cache (push-access-confounded), and
-    # probe_capabilities has no other admin.read-marking call here.
-    assert caps.resolve("admin.read") is None
+    # admin.read is probed via the vulnerability-alerts check (definitive),
+    # since traffic 403s are push-access-confounded and never teach the cache.
+    assert caps.resolve("admin.read") is False
     assert caps.resolve("pulls.read") is True
     assert caps.resolve("dependabot.read") is True
     assert caps.resolve("secret_scanning.read") is True  # 404 = authz passed
