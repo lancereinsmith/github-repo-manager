@@ -118,6 +118,53 @@ def sync_fork_op() -> BulkOp:
     return BulkOp("sync_fork", "Sync fork with upstream", apply)
 
 
+def _clear_items_op(
+    key: str,
+    label: str,
+    list_fn_name: str,
+    delete_fn_name: str,
+    noun: str,
+) -> BulkOp:
+    """Shared shape for artifact/cache cleanup: list, then delete one at a time."""
+
+    def apply(client: GitHubClient, repo: dict[str, Any]) -> tuple[bool, str]:
+        full = repo["full_name"]
+        items = getattr(client, list_fn_name)(full)
+        if items is None:
+            return False, f"{full}: {noun}s unavailable (permission?)"
+        if not items:
+            return True, f"{full}: no {noun}s"
+        deleted = 0
+        freed = 0
+        for item in items:
+            ok, msg = getattr(client, delete_fn_name)(full, item["id"])
+            if not ok:
+                return False, f"{full}: deleted {deleted}, then failed: {msg}"
+            deleted += 1
+            freed += item.get("size_in_bytes") or 0
+        return True, f"{full}: deleted {deleted} {noun}s ({freed / 1_000_000:.0f} MB)"
+
+    return BulkOp(key, label, apply)
+
+
+def clear_artifacts_op() -> BulkOp:
+    """Delete every Actions artifact on each repo."""
+    return _clear_items_op(
+        "clear_artifacts",
+        "Clear Actions artifacts",
+        "list_artifacts",
+        "delete_artifact",
+        "artifact",
+    )
+
+
+def clear_caches_op() -> BulkOp:
+    """Delete every Actions cache entry on each repo."""
+    return _clear_items_op(
+        "clear_caches", "Clear Actions caches", "list_caches", "delete_cache", "cache"
+    )
+
+
 # (key, label, needs_topic) — display order for the TUI bulk menu.
 TUI_BULK_MENU: list[tuple[str, str, bool]] = [
     ("archive", "Archive", False),
@@ -137,6 +184,8 @@ TUI_BULK_MENU: list[tuple[str, str, bool]] = [
     ("secfix_on", "Automated security fixes → ON", False),
     ("secfix_off", "Automated security fixes → OFF", False),
     ("sync_fork", "Sync fork with upstream", False),
+    ("clear_artifacts", "Clear Actions artifacts", False),
+    ("clear_caches", "Clear Actions caches", False),
 ]
 
 
@@ -162,6 +211,8 @@ def build_menu_op(key: str, arg: str | None = None) -> BulkOp:
         "secfix_on": security_fixes_op(True),
         "secfix_off": security_fixes_op(False),
         "sync_fork": sync_fork_op(),
+        "clear_artifacts": clear_artifacts_op(),
+        "clear_caches": clear_caches_op(),
     }
     if key in simple:
         return simple[key]

@@ -15,6 +15,8 @@ from rich.table import Table
 from gman.bulk import (
     BulkOp,
     add_topic_op,
+    clear_artifacts_op,
+    clear_caches_op,
     fields_op,
     normalize_topics,
     remove_topic_op,
@@ -374,6 +376,10 @@ def _bulk_ops(
         ops.append(security_fixes_op(args.security_fixes == "on"))
     if args.sync_fork:
         ops.append(sync_fork_op())
+    if args.clear_artifacts:
+        ops.append(clear_artifacts_op())
+    if args.clear_caches:
+        ops.append(clear_caches_op())
     return ops
 
 
@@ -551,6 +557,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_bulk.add_argument("--security-fixes", dest="security_fixes", choices=["on", "off"])
     p_bulk.add_argument("--sync-fork", action="store_true", help="Sync forks with upstream.")
+    p_bulk.add_argument(
+        "--clear-artifacts", action="store_true", help="Delete all Actions artifacts."
+    )
+    p_bulk.add_argument("--clear-caches", action="store_true", help="Delete all Actions caches.")
     p_bulk.add_argument("--dry-run", action="store_true", help="List targets and exit.")
     p_bulk.add_argument("--yes", "-y", action="store_true", help="Skip confirmation.")
     _add_field_flags(p_bulk, bulk=True)

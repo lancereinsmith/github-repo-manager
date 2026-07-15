@@ -461,6 +461,25 @@ def test_bulk_sync_fork_flag(capsys) -> None:
     assert "skipped" in out  # the non-fork line
 
 
+def test_bulk_clear_artifacts_flag(capsys) -> None:
+    fake = _BulkFakeClient([make_repo("a")])
+    fake.cleared: list = []
+
+    def list_artifacts(full):
+        return [{"id": 1, "size_in_bytes": 5_000_000}]
+
+    def delete_artifact(full, artifact_id):
+        fake.cleared.append((full, artifact_id))
+        return True, "ok"
+
+    fake.list_artifacts = list_artifacts
+    fake.delete_artifact = delete_artifact
+    rc = cli.cli_bulk(fake, _bulk_args("--all", "--clear-artifacts", "--yes"))
+
+    assert rc == 0
+    assert fake.cleared == [("octocat/a", 1)]
+
+
 def test_sync_happy_path(capsys) -> None:
     class FakeClient:
         def get_repo(self, full):

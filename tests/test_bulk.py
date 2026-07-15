@@ -179,3 +179,76 @@ def test_menu_includes_sync_fork() -> None:
 
     assert ("sync_fork", "Sync fork with upstream", False) in TUI_BULK_MENU
     assert build_menu_op("sync_fork").label == "Sync fork with upstream"
+
+
+@responses.activate
+def test_clear_artifacts_op_deletes_all(client: GitHubClient) -> None:
+    from gman.bulk import clear_artifacts_op
+
+    full = "octocat/r"
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/actions/artifacts",
+        json={
+            "total_count": 2,
+            "artifacts": [
+                {"id": 1, "size_in_bytes": 1_000_000},
+                {"id": 2, "size_in_bytes": 2_000_000},
+            ],
+        },
+        status=200,
+    )
+    responses.add(
+        responses.DELETE, f"{DEFAULT_API_URL}/repos/{full}/actions/artifacts/1", status=204
+    )
+    responses.add(
+        responses.DELETE, f"{DEFAULT_API_URL}/repos/{full}/actions/artifacts/2", status=204
+    )
+
+    ok, msg = clear_artifacts_op().apply(client, make_repo("r"))
+    assert ok and "2 artifacts" in msg and "3 MB" in msg
+
+
+def test_clear_artifacts_op_empty_and_unavailable(client: GitHubClient) -> None:
+    from gman.bulk import clear_artifacts_op
+
+    class FakeEmpty:
+        def list_artifacts(self, full):
+            return []
+
+    class FakeDenied:
+        def list_artifacts(self, full):
+            return None
+
+    ok1, msg1 = clear_artifacts_op().apply(FakeEmpty(), make_repo("r"))
+    ok2, msg2 = clear_artifacts_op().apply(FakeDenied(), make_repo("r"))
+    assert ok1 and "no artifacts" in msg1
+    assert not ok2 and "unavailable" in msg2
+
+
+def test_clear_caches_op_partial_failure(client: GitHubClient) -> None:
+    from gman.bulk import clear_caches_op
+
+    class FakePartial:
+        def list_caches(self, full):
+            return [
+                {"id": 1, "size_in_bytes": 10},
+                {"id": 2, "size_in_bytes": 10},
+            ]
+
+        def delete_cache(self, full, cache_id):
+            if cache_id == 2:
+                return False, "HTTP 500: boom"
+            return True, "ok"
+
+    ok, msg = clear_caches_op().apply(FakePartial(), make_repo("r"))
+    assert not ok and "deleted 1" in msg and "failed" in msg
+
+
+def test_menu_includes_cleanup_ops() -> None:
+    from gman.bulk import TUI_BULK_MENU, build_menu_op
+
+    assert ("clear_artifacts", "Clear Actions artifacts", False) in TUI_BULK_MENU
+    assert ("clear_caches", "Clear Actions caches", False) in TUI_BULK_MENU
+    assert build_menu_op("clear_artifacts").label == "Clear Actions artifacts"
+    assert build_menu_op("clear_caches").label == "Clear Actions caches"
