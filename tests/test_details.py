@@ -71,7 +71,24 @@ def test_fetch_details_degrades_per_field(client: GitHubClient) -> None:
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/actions/runs", status=403)
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/pages", status=404)
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/traffic/views", status=403)
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/traffic/clones", status=403)
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/pulls", json=[], status=200)
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/dependabot/alerts",
+        json=[],
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/secret-scanning/alerts",
+        status=404,
+    )
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/vulnerability-alerts",
+        status=204,
+    )
     responses.add(
         responses.GET,
         f"{DEFAULT_API_URL}/repos/{full}/actions/artifacts",
@@ -92,6 +109,7 @@ def test_fetch_details_degrades_per_field(client: GitHubClient) -> None:
     assert details.open_issues == 0
     # traffic denied (admin.read) → None + hinted
     assert details.traffic is None and "traffic" in details.hints
+    assert details.actions_storage is None and "actions_storage" in details.hints
     # pages absent (404 = true absence) → None WITHOUT hint
     assert details.pages is None and "pages" not in details.hints
 
@@ -276,6 +294,23 @@ def test_fetch_details_fork_task_only_for_forks(client: GitHubClient) -> None:
     for path in ("languages", "releases/latest", "actions/runs", "pages", "pulls"):
         responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/{path}", json={}, status=404)
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/traffic/views", status=403)
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/traffic/clones", status=403)
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/dependabot/alerts",
+        json=[],
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/secret-scanning/alerts",
+        status=404,
+    )
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/vulnerability-alerts",
+        status=204,
+    )
     responses.add(
         responses.GET,
         f"{DEFAULT_API_URL}/repos/{full}/actions/artifacts",
@@ -292,6 +327,9 @@ def test_fetch_details_fork_task_only_for_forks(client: GitHubClient) -> None:
     details = fetch_details(client, make_repo("r"))  # fork=False
 
     assert details.fork_status is None and "fork_status" not in details.hints
+    assert details.dependabot_alerts == 0
+    assert details.secret_alerts is None
+    assert details.vulnerability_alerts_enabled is True
 
 
 def test_render_and_dict_include_security_and_fork() -> None:
