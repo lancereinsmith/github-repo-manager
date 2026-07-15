@@ -12,6 +12,7 @@ def make_repo(name: str, **overrides: Any) -> dict[str, Any]:
         "full_name": f"octocat/{name}",
         "private": False,
         "archived": False,
+        "fork": False,
         "visibility": "public",
         "description": f"desc for {name}",
         "language": "Python",

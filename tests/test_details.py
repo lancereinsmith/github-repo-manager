@@ -128,6 +128,15 @@ def test_probe_capabilities_marks_read_families(client: GitHubClient) -> None:
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/pages", status=404)
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/traffic/views", status=403)
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/pulls", json=[], status=200)
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/dependabot/alerts",
+        json=[],
+        status=200,
+    )
+    responses.add(
+        responses.GET, f"{DEFAULT_API_URL}/repos/{full}/secret-scanning/alerts", status=404
+    )
 
     probe_capabilities(client)
 
@@ -185,3 +194,118 @@ def test_probe_capabilities_silent_on_rate_limit(client: GitHubClient) -> None:
         headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1893456000"},
     )
     probe_capabilities(client)  # must not raise
+
+
+@responses.activate
+def test_fork_status_uses_parent_passthrough(client: GitHubClient) -> None:
+    """When the repo dict already carries `parent`, no extra get_repo call happens."""
+    full = "octocat/fork"
+    repo = make_repo(
+        "fork",
+        fork=True,
+        parent={
+            "full_name": "upstream/orig",
+            "default_branch": "main",
+            "owner": {"login": "upstream"},
+        },
+    )
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/compare/upstream:main...main",
+        json={"ahead_by": 1, "behind_by": 3, "status": "diverged"},
+        status=200,
+    )
+    from gman.details import _fork_status
+
+    status = _fork_status(client, repo)
+
+    assert status == {
+        "parent": "upstream/orig",
+        "ahead_by": 1,
+        "behind_by": 3,
+        "status": "diverged",
+    }
+    assert len(responses.calls) == 1  # compare only — no get_repo
+
+
+@responses.activate
+def test_fork_status_fetches_parent_when_missing(client: GitHubClient) -> None:
+    full = "octocat/fork"
+    repo = make_repo("fork", fork=True)
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}",
+        json=make_repo(
+            "fork",
+            fork=True,
+            parent={
+                "full_name": "upstream/orig",
+                "default_branch": "dev",
+                "owner": {"login": "upstream"},
+            },
+        ),
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/compare/upstream:dev...main",
+        json={"ahead_by": 0, "behind_by": 5, "status": "behind"},
+        status=200,
+    )
+    from gman.details import _fork_status
+
+    status = _fork_status(client, repo)
+    assert status is not None and status["behind_by"] == 5
+
+
+@responses.activate
+def test_fetch_details_fork_task_only_for_forks(client: GitHubClient) -> None:
+    full = "octocat/r"
+    for path in ("languages", "releases/latest", "actions/runs", "pages", "pulls"):
+        responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/{path}", json={}, status=404)
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/traffic/views", status=403)
+    responses.add(
+        responses.GET, f"{DEFAULT_API_URL}/repos/{full}/dependabot/alerts", json=[], status=200
+    )
+    responses.add(
+        responses.GET, f"{DEFAULT_API_URL}/repos/{full}/secret-scanning/alerts", status=404
+    )
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/vulnerability-alerts", status=204)
+
+    details = fetch_details(client, make_repo("r"))  # fork=False
+
+    assert details.fork_status is None and "fork_status" not in details.hints
+    assert details.dependabot_alerts == 0
+    assert details.secret_alerts is None
+    assert details.vulnerability_alerts_enabled is True
+
+
+def test_render_and_dict_include_security_and_fork() -> None:
+    details = RepoDetails(
+        repo=make_repo(
+            "f",
+            fork=True,
+        ),
+        open_prs=0,
+        fork_status={"parent": "up/orig", "ahead_by": 1, "behind_by": 2, "status": "diverged"},
+        dependabot_alerts=3,
+        secret_alerts=None,
+        vulnerability_alerts_enabled=False,
+        hints={"secret_alerts": "needs Secret scanning alerts: read"},
+    )
+    from io import StringIO
+
+    from rich.console import Console
+
+    console = Console(file=StringIO(), width=200)
+    console.print(render_details(details))
+    out = console.file.getvalue()
+    assert "up/orig" in out and "1 ahead" in out and "2 behind" in out
+    assert "Dependabot alerts: 3" in out
+    assert "OFF" in out
+
+    d = details_to_dict(details)
+    assert d["fork_status"]["behind_by"] == 2
+    assert d["dependabot_alerts"] == 3
+    assert d["secret_alerts"] is None
+    assert d["vulnerability_alerts_enabled"] is False

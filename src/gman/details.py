@@ -21,6 +21,10 @@ FIELD_FAMILIES: dict[str, str] = {
     "pages": "pages.read",
     "traffic": "admin.read",
     "open_prs": "pulls.read",
+    "fork_status": "contents.read",
+    "dependabot_alerts": "dependabot.read",
+    "secret_alerts": "secret_scanning.read",
+    "vulnerability_alerts_enabled": "admin.read",
 }
 
 
@@ -35,6 +39,10 @@ class RepoDetails:
     pages: dict[str, Any] | None = None
     traffic: dict[str, int] | None = None
     open_prs: int | None = None
+    fork_status: dict[str, Any] | None = None
+    dependabot_alerts: int | None = None
+    secret_alerts: int | None = None
+    vulnerability_alerts_enabled: bool | None = None
     hints: dict[str, str] = field(default_factory=dict)  # field name -> denial hint
 
     @property
@@ -43,6 +51,27 @@ class RepoDetails:
         if self.open_prs is None:
             return None
         return max(0, (self.repo.get("open_issues_count") or 0) - self.open_prs)
+
+
+def _fork_status(client: GitHubClient, repo: dict[str, Any]) -> dict[str, Any] | None:
+    """Ahead/behind counts for a fork vs its upstream default branch."""
+    full = repo["full_name"]
+    parent = repo.get("parent")
+    if not parent:
+        parent = client.get_repo(full).get("parent")
+    if not parent:
+        return None
+    base = f"{parent['owner']['login']}:{parent.get('default_branch') or 'HEAD'}"
+    head = repo.get("default_branch") or "HEAD"
+    cmp = client.compare(full, f"{base}...{head}")
+    if cmp is None:
+        return None
+    return {
+        "parent": parent["full_name"],
+        "ahead_by": cmp.get("ahead_by", 0),
+        "behind_by": cmp.get("behind_by", 0),
+        "status": cmp.get("status", ""),
+    }
 
 
 def fetch_details(client: GitHubClient, repo: dict[str, Any]) -> RepoDetails:
@@ -55,9 +84,14 @@ def fetch_details(client: GitHubClient, repo: dict[str, Any]) -> RepoDetails:
         "pages": lambda: client.get_pages_info(full),
         "traffic": lambda: client.get_traffic(full),
         "open_prs": lambda: client.get_open_pr_count(full),
+        "dependabot_alerts": lambda: client.get_open_dependabot_alert_count(full),
+        "secret_alerts": lambda: client.get_open_secret_alert_count(full),
+        "vulnerability_alerts_enabled": lambda: client.get_vulnerability_alerts_enabled(full),
     }
+    if repo.get("fork"):
+        tasks["fork_status"] = lambda: _fork_status(client, repo)
     details = RepoDetails(repo=repo)
-    with ThreadPoolExecutor(max_workers=6) as pool:
+    with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
         futures = {name: pool.submit(fn) for name, fn in tasks.items()}
         for name, fut in futures.items():
             try:
@@ -134,6 +168,8 @@ def probe_capabilities(client: GitHubClient) -> None:
     client.get_pages_info(full)
     client.get_traffic(full)
     client.get_open_pr_count(full)
+    client.get_open_dependabot_alert_count(full)
+    client.get_open_secret_alert_count(full)
 
 
 def _fmt_date(value: str | None) -> str:
@@ -218,6 +254,32 @@ def render_details(details: RepoDetails) -> Table:
         grid.add_row("Open items", f"{details.open_issues} issues / {details.open_prs} PRs")
     else:
         grid.add_row("Open items", dash("open_prs"))
+
+    if repo.get("fork"):
+        fs = details.fork_status
+        if fs:
+            grid.add_row(
+                "Fork",
+                f"⑂ fork of {escape(fs['parent'])} — "
+                f"{fs['ahead_by']} ahead / {fs['behind_by']} behind",
+            )
+        else:
+            grid.add_row("Fork", dash("fork_status"))
+
+    dep = (
+        str(details.dependabot_alerts)
+        if details.dependabot_alerts is not None
+        else dash("dependabot_alerts")
+    )
+    sec = str(details.secret_alerts) if details.secret_alerts is not None else dash("secret_alerts")
+    if details.vulnerability_alerts_enabled is None:
+        va = dash("vulnerability_alerts_enabled")
+    else:
+        va = "ON" if details.vulnerability_alerts_enabled else "OFF"
+    grid.add_row(
+        "Security",
+        f"Dependabot alerts: {dep} · secret-scanning: {sec} · vulnerability alerts: {va}",
+    )
     return grid
 
 
@@ -266,4 +328,8 @@ def details_to_dict(details: RepoDetails) -> dict[str, Any]:
         "traffic": details.traffic,
         "open_prs": details.open_prs,
         "open_issues": details.open_issues,
+        "fork_status": details.fork_status,
+        "dependabot_alerts": details.dependabot_alerts,
+        "secret_alerts": details.secret_alerts,
+        "vulnerability_alerts_enabled": details.vulnerability_alerts_enabled,
     }
