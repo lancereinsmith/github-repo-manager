@@ -8,6 +8,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- User-manual documentation site (Getting started, Commands, TUI guide,
+  token recipes) deployed to GitHub Pages on every push to `main`.
 - `info` command and TUI detail panel (`i`/Enter): languages, latest release,
   CI status, Pages URL, 14-day traffic, open issue/PR split — each field
   degrades gracefully when the token lacks its permission.

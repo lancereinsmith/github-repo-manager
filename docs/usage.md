@@ -1,34 +1,58 @@
-# Usage
+# Commands
 
-```bash
-gman [--token TOKEN] [--api-url URL] {list,delete,archive,describe,edit,bulk,sync,actions,new,info,auth,excel,tui} [...]
+Everything gman can do from the command line. Global options come first, then
+each command grouped by what you're trying to accomplish.
+
+```text
+gman [--token TOKEN] [--api-url URL] COMMAND [options]
 ```
 
-If `--token` is omitted, `GITHUB_TOKEN` is used; failing that, the token
-stored by `gh auth login` is used. `--api-url` (or `GITHUB_API_URL`) points
-`gman` at a GitHub Enterprise Server instance, e.g.
-`https://ghe.example.com/api/v3`.
+| Global option | What it does |
+| --- | --- |
+| `--token`, `-t` | Use this token instead of `$GITHUB_TOKEN` / the gh CLI |
+| `--api-url` | Talk to a GitHub Enterprise Server (e.g. `https://ghe.example.com/api/v3`); `$GITHUB_API_URL` works too |
 
-## `list`
+Exit codes follow the usual convention: `0` on success, `1` when an operation
+fails, `2` when the command line itself is invalid.
 
-Print a Rich table to stdout, sorted by Last Updated descending.
+---
+
+## Browsing your repositories
+
+### `list`
+
+Print a table of every repo you own, newest activity first.
 
 ```bash
 gman list
-gman list --detailed
-gman list --json
-gman list --include-orgs
+gman list --detailed          # adds Language, Stars, and Forks columns
+gman list --json              # machine-readable, pipe it anywhere
+gman list --include-orgs      # also show org and collaborator repos
 ```
 
-- `--detailed` adds Language, Stars, and Forks columns.
-- `--json` emits a machine-readable array to stdout (progress is written to
-  stderr, so the JSON stays pipeable).
-- `--affiliation` sets the raw API filter (default `owner`); `--include-orgs`
-  is a shortcut for `owner,collaborator,organization_member`.
+`--json` keeps stdout clean — progress messages go to stderr — so you can
+pipe it straight into `jq`. `--affiliation` accepts a raw API filter if you
+need something more specific than `--include-orgs`.
 
-## `excel`
+### `info`
 
-Export every repo to an `.xlsx` file.
+A dossier on a single repo: description, topics, languages, latest release,
+last CI run, GitHub Pages URL, 14-day traffic, the open issue/PR split, fork
+status, security alerts, and Actions storage.
+
+```bash
+gman info username/project
+gman info username/project --json
+```
+
+Anything your token can't see prints as `—` with a hint naming the missing
+permission. In `--json` mode those hints go to stderr so the JSON stays
+clean.
+
+### `excel`
+
+Export your inventory to a formatted spreadsheet — handy for sharing or
+printing.
 
 ```bash
 gman excel
@@ -36,107 +60,145 @@ gman excel --output ~/Desktop/repos.xlsx
 gman excel --include-orgs
 ```
 
-The output file has a header row, banded even rows, frozen pane on row 1,
-an autofilter, and landscape page setup that fits to width when printed.
-See [Excel export](excel.md) for the full layout.
+See [Excel export](excel.md) for exactly what the file looks like.
 
-## `describe`
+### `auth`
 
-Set a repo's description. Pass an empty string to clear it.
+Ask gman what your token can do.
+
+```bash
+gman auth
+gman auth --probe    # resolve unknowns with one cheap read per permission
+```
+
+Prints the token's source, its type (classic or fine-grained), any announced
+scopes, and a feature-availability table. Fine-grained tokens can't announce
+their permissions up front, so some rows start as *unknown* — `--probe`
+resolves the read permissions, and write permissions resolve the first time
+you use them.
+
+---
+
+## Editing a repository
+
+### `describe`
+
+Set a repo's description. An empty string clears it.
 
 ```bash
 gman describe username/project "A short, useful tagline"
 gman describe username/project ""
 ```
 
-## `info`
+### `edit`
 
-Show a detail panel for one repo: languages, latest release, CI status,
-Pages URL, 14-day traffic, and the open issue/PR split.
-
-```bash
-gman info username/project
-gman info username/project --json   # hints about unavailable fields go to stderr
-```
-
-Fields the token can't see render as `—` with a hint (see
-[Choosing a token](tokens.md)).
-
-## `auth`
-
-Show what gman knows about your token: source, type, classic scopes, and a
-feature-availability table.
-
-```bash
-gman auth
-gman auth --probe   # resolve unknowns with one cheap read per permission family
-```
-
-## `edit`
-
-Change settings and metadata on one repo — all field flags are combined into
-a single API call (topics go through their own endpoint).
+Change any combination of settings and metadata in one go — gman batches all
+the setting flags into a single API call.
 
 ```bash
 gman edit username/project --homepage https://example.com --wiki off
 gman edit username/project --rename new-name --visibility private
-gman edit username/project --topics python,cli        # replace all topics
+gman edit username/project --topics python,cli               # replace all topics
 gman edit username/project --add-topic tui --remove-topic wip
 gman edit username/project --delete-branch-on-merge on --allow-rebase off
 ```
 
-Flags: `--description`, `--homepage`, `--rename`, `--visibility
-{public,private}`, `--topics` (replace) or repeatable
-`--add-topic`/`--remove-topic`, `--wiki/--issues/--projects {on,off}`,
-`--delete-branch-on-merge {on,off}`,
-`--allow-squash/--allow-merge-commit/--allow-rebase/--allow-update-branch
-{on,off}`, and the squash/merge commit title/message defaults
-(`--squash-commit-title` …). All writes need `Administration: write`
-(fine-grained) or the `repo` scope (classic) — see
-[Choosing a token](tokens.md).
+| Flag | Changes |
+| --- | --- |
+| `--description TEXT` | Description |
+| `--homepage URL` | Homepage URL |
+| `--rename NAME` | Repository name (GitHub redirects the old URLs) |
+| `--visibility {public,private}` | Visibility |
+| `--topics a,b,c` | Replace **all** topics |
+| `--add-topic X` / `--remove-topic X` | Adjust topics individually (repeatable) |
+| `--wiki` / `--issues` / `--projects {on,off}` | Feature tabs |
+| `--delete-branch-on-merge {on,off}` | Auto-delete merged branches |
+| `--allow-squash` / `--allow-merge-commit` / `--allow-rebase` / `--allow-update-branch {on,off}` | Merge methods |
+| `--squash-commit-title` / `--squash-commit-message` / `--merge-commit-title` / `--merge-commit-message` | Default commit messages |
 
-## `bulk`
+Topics are validated before anything is written — if a topic is invalid, the
+command exits with code 2 and **nothing changes**.
 
-Apply the same change to many repos. Targets come from positional names,
-`--filter SUBSTR` (name/description substring), or `--all` — exactly one.
+### `archive`
+
+Archive a repo (or bring one back). Reversible, unlike delete.
 
 ```bash
-gman bulk --all --delete-branch-on-merge on --dry-run   # list what would change
+gman archive username/old-project
+gman archive username/old-project --unarchive
+gman archive username/old-project --force      # skip the y/N prompt
+```
+
+---
+
+## Changing many repos at once
+
+### `bulk`
+
+Apply the same change to a set of repositories. Pick targets one of three
+ways — explicit names, a filter, or everything:
+
+```bash
+gman bulk --all --delete-branch-on-merge on --dry-run   # see what would change
 gman bulk --filter experiment --archive --yes
 gman bulk o/r1 o/r2 --add-topic archived-candidate
 gman bulk --all --vulnerability-alerts on
+gman bulk --all --sync-fork                             # non-forks are skipped
+gman bulk --all --clear-artifacts --clear-caches        # free Actions storage
 ```
 
-Bulk-only flags: `--archive`/`--unarchive`, `--vulnerability-alerts {on,off}`,
-`--security-fixes {on,off}`, `--sync-fork`, `--clear-artifacts`, `--clear-caches`.
-`--rename`, `--description`, and `--topics` (replace-all) are deliberately not available in bulk.
+Most `edit` flags work here, plus bulk-only ones: `--archive`/`--unarchive`,
+`--vulnerability-alerts {on,off}`, `--security-fixes {on,off}`,
+`--sync-fork`, `--clear-artifacts`, `--clear-caches`. (`--rename`,
+`--description`, and `--topics` replace-all are deliberately unavailable —
+applying them uniformly is never what you want.)
 
-The command lists the operations and targets, then asks `Proceed? [y/N]`
-unless `--yes`. `--dry-run` stops after the listing. Writes run one repo at a
-time (GitHub throttles concurrent writes); a rate-limit abort marks the
-remainder `⏭ skipped`. Exit code is 0 only if every operation succeeded.
+How a run works:
 
-## `sync`
+1. gman lists the operations and every target repo.
+2. `--dry-run` stops here. Otherwise it asks `Proceed? [y/N]` — `--yes`
+   skips the question.
+3. Changes apply **one repo at a time** (GitHub throttles concurrent
+   writes), with a progress line as it goes.
+4. You get a per-repo ✅/❌ report. If GitHub rate-limits mid-run, the
+   remaining repos are marked `⏭ skipped` rather than half-applied.
 
-Sync a fork with its upstream (the same as GitHub's "Sync fork" button).
+Exit code is `0` only if every operation succeeded.
+
+---
+
+## Forks
+
+### `sync`
+
+Bring a fork up to date with its upstream — the same thing as GitHub's
+**Sync fork** button.
 
 ```bash
 gman sync username/my-fork
 gman sync username/my-fork --branch release
 ```
 
-Defaults to the repo's default branch. A merge conflict returns an error —
-resolve it locally. Bulk variant: `gman bulk --all --sync-fork` (non-forks are
-skipped). Needs `Contents: write` (fine-grained) or `repo` scope (classic).
+Syncs the default branch unless you say otherwise. If the branches have
+conflicting changes, gman reports the conflict and leaves everything
+untouched — resolve it locally with git.
 
-## `actions`
+!!! tip
+    The TUI shows how far each fork has drifted (press `Enter` on a fork to
+    see *N ahead / M behind*), and `gman bulk --all --sync-fork` syncs every
+    fork you own in one pass.
 
-Manage GitHub Actions artifacts, caches, and workflow runs. With no flags,
-shows the 5 most recent runs, artifact count and total size, and cache count
-and total size. Pass one action flag to modify them.
+---
+
+## GitHub Actions housekeeping
+
+### `actions`
+
+Inspect and clean up a repo's Actions footprint. With no flags you get an
+overview; with a flag you act.
 
 ```bash
-gman actions username/repo
+gman actions username/repo                              # overview
 gman actions username/repo --clear-artifacts
 gman actions username/repo --clear-artifacts --older-than 30
 gman actions username/repo --clear-caches
@@ -145,75 +207,76 @@ gman actions username/repo --rerun RUN_ID --failed-only
 gman actions username/repo --cancel RUN_ID
 ```
 
-Flags:
-- `--clear-artifacts` removes all artifacts (optionally filtered by age).
-- `--older-than DAYS` limits `--clear-artifacts` to artifacts older than N days.
-- `--clear-caches` removes all caches.
-- `--rerun RUN_ID` reruns a workflow run by ID; `--failed-only` reruns only
-  failed jobs.
-- `--cancel RUN_ID` cancels a workflow run by ID.
+The overview shows the five most recent workflow runs (with pass/fail
+status), the artifact count and total size, and the cache count and size.
 
-Exit code is 0 only if the operation succeeded. Bulk variant:
-`gman bulk --all --clear-artifacts` and `gman bulk --all --clear-caches`.
-Needs `Actions: write` (fine-grained) — see [Choosing a token](tokens.md).
+| Flag | What it does |
+| --- | --- |
+| `--clear-artifacts` | Delete artifacts (all of them, or older than `--older-than DAYS`) |
+| `--clear-caches` | Delete every Actions cache entry |
+| `--rerun RUN_ID` | Re-run a workflow run (`--failed-only` re-runs just its failed jobs) |
+| `--cancel RUN_ID` | Cancel an in-progress run |
 
-## `new`
+Artifacts and caches count against your account-wide Actions storage quota —
+`gman bulk --all --clear-artifacts --clear-caches` reclaims it everywhere at
+once.
 
-Create a new repository. Choose between direct creation or cloning from a
-template repo. The `--list-gitignores` and `--list-licenses` flags list
-available templates.
+---
+
+## Creating a repository
+
+### `new`
+
+Create a repo without opening a browser.
 
 ```bash
 gman new my-repo
 gman new my-repo --private --description "A short description"
-gman new my-repo --auto-init --gitignore Python --license MIT
-gman new my-repo --template owner/template-repo
+gman new my-repo --auto-init --gitignore Python --license mit
 gman new my-repo --template owner/template-repo --private
-gman new --list-gitignores
-gman new --list-licenses
+gman new --list-gitignores        # what .gitignore templates exist?
+gman new --list-licenses          # what license templates exist?
 ```
 
-**Direct creation** (default):
-- `--private` makes the repo private.
-- `--description TEXT` sets the description.
-- `--homepage URL` sets the homepage URL.
-- `--auto-init` initializes with a README.
-- `--gitignore TEMPLATE` applies a `.gitignore` template (run
-  `gman new --list-gitignores` to see available templates).
-- `--license TEMPLATE` applies a license template (run
-  `gman new --list-licenses` to see available).
+**Direct creation** accepts `--private`, `--description`, `--homepage`,
+`--auto-init` (start with a README), `--gitignore TEMPLATE`, and
+`--license TEMPLATE`.
 
-**Template mode** (pass `--template owner/repo`):
-- `--private` makes the repo private.
-- `--description TEXT` sets the description.
-- `--include-all-branches` includes all branches from the template.
-- Cannot use `--auto-init`, `--gitignore`, `--license`, or `--homepage`.
+**Template mode** (`--template owner/repo`) generates the new repo from a
+template repository. It accepts `--private`, `--description`, and
+`--include-all-branches`; the direct-creation flags don't apply and are
+rejected.
 
-After successful creation, a clone hint is printed. Needs `repo` scope
-(classic) or fine-grained token with all necessary repo permissions. The
-template/license pickers (`--list-gitignores`, `--list-licenses`) require no
-special permissions.
+On success gman prints the new repo's URL and a ready-to-paste
+`git clone` command. If the name is taken, GitHub's own error message tells
+you so — nothing is created.
 
-## `delete`
+---
 
-Delete a repo by full name. You'll be prompted to retype the name unless
-`--force` is supplied.
+## Deleting a repository
+
+### `delete`
+
+Delete a repo by full name. gman makes you retype the name to confirm — and
+looks out for you first.
 
 ```bash
 gman delete username/old-project
-gman delete username/old-project --force
-```
-
-`--backup` downloads a `{name}-{branch}.tar.gz` snapshot (git contents only — no
-issues/wiki/releases) before deleting; if the download fails, the deletion is
-aborted. `--backup-dir` chooses where it lands (default: current directory).
-
-```bash
 gman delete username/old-project --backup --backup-dir ~/Backups
+gman delete username/old-project --force        # no confirmation prompt
 ```
 
-Before the confirmation prompt, gman warns if the repo has forks or stars, is
-public, or is pinned on your profile.
+Before the prompt, gman warns you if the repo:
+
+- has forks (they survive, but lose their upstream)
+- has stars
+- is public
+- is pinned to your profile
+
+`--backup` downloads a `{name}-{branch}.tar.gz` snapshot before deleting.
+If the download fails, **the deletion is aborted** — you never lose a repo
+whose backup didn't land. The tarball contains the git contents only (no
+issues, wiki, or releases).
 
 !!! warning
     Deletion is permanent. Even with `--force` there is no recycle bin.
@@ -222,26 +285,19 @@ public, or is pinned on your profile.
     Deletion requires the `delete_repo` scope, which `gh auth login` does
     **not** request by default. If GitHub returns "Must have admin rights
     to Repository", run `gh auth refresh -h github.com -s delete_repo`.
-    A PAT in `GITHUB_TOKEN` must likewise be issued with `delete_repo`.
+    A fine-grained token needs `Administration: write` instead — see
+    [Tokens & permissions](tokens.md).
 
-## `archive`
+---
 
-Archive (or unarchive) a repo. A `y/N` confirmation is shown unless
-`--force` is supplied. Archive is reversible — pass `--unarchive` to
-flip a repo back.
+## The interactive table
 
-```bash
-gman archive username/old-project
-gman archive username/old-project --unarchive
-gman archive username/old-project --force
-```
+### `tui`
 
-## `tui`
-
-Launch the interactive Textual UI (`gman-tui` is a shortcut for this).
+Launch the TUI (`gman-tui` is a direct shortcut).
 
 ```bash
 gman tui
 ```
 
-See the [TUI](tui.md) page for keybindings.
+The [TUI guide](tui.md) walks through every key and workflow.

@@ -1,88 +1,136 @@
-# TUI
+# The TUI
 
-The TUI is a Textual app showing a sortable, zebra-striped `DataTable` of
-your repos.
+The fastest way to work through your repositories is the interactive table.
+Start it with either:
 
-## Layout
+```bash
+gman tui
+gman-tui
+```
 
-- **Header** — app title and a sub-title showing `username — visible/total`
-  plus the current filter, if any
-- **Table** — eight columns: ✓ (selection), Name, Vis. (🔒/🌐/⑂/❌/📌), Description, Lang,
-  Stars, Open (open issues + PRs), Updated
-- **Footer** — keybinding hints
+## Reading the screen
 
-## Keybindings
+- **Header** — the app title, and a subtitle showing your username,
+  `visible/total` repo counts, the active filter, and how many repos you've
+  selected.
+- **The table** — one row per repo, eight columns:
+
+    | Column | Meaning |
+    | --- | --- |
+    | ✓ | Selected for a bulk action |
+    | Name | Repository name |
+    | Vis. | Badges: 🔒 private / 🌐 public, ⑂ fork, ❌ archived, 📌 pinned to your profile |
+    | Description | First 80 characters |
+    | Lang | Primary language |
+    | Stars | Star count |
+    | Open | Open issues + pull requests |
+    | Updated | Last update date |
+
+- **Footer** — the keybindings available right now.
+
+## Keys
+
+### Looking around
 
 | Key | Action |
 | --- | --- |
+| `↑` `↓` | Move through the table |
+| `/` | Filter by substring (matches name and description; submit empty to clear) |
+| `Enter` or `i` | Open the detail panel for the current repo |
+| `v` *(in the detail panel)* | Read the repo's rendered README |
+| `o` | Open the current repo in your browser |
+| `r` | Refresh everything from GitHub |
+
+The filter is instant and local — it narrows the table without touching the
+network.
+
+### Acting on one repo
+
+| Key | Action |
+| --- | --- |
+| `c` | Change the description |
+| `t` | Edit topics (comma-separated; validated before saving) |
+| `h` | Edit the homepage URL |
+| `a` | Archive — or unarchive, if it's already archived |
+| `s` | Sync a fork with its upstream |
+| `d` | Delete (with warnings, confirmation, and optional backup) |
+
+### Acting on many repos
+
+| Key | Action |
+| --- | --- |
+| `space` | Select / deselect the current repo |
+| `ctrl+a` | Select everything visible (press again to deselect) |
+| `b` | Open the bulk-action menu for the selection |
+
+### Housekeeping
+
+| Key | Action |
+| --- | --- |
+| `e` | Export the current list to `github_repos.xlsx` (in the directory you launched the TUI from) |
+| `x` | Open that spreadsheet in your default app |
 | `q` | Quit |
-| `r` | Refresh from GitHub |
-| `e` | Export the current list to `github_repos.xlsx` |
-| `x` | Open `github_repos.xlsx` in your default spreadsheet app |
-| `o` | Open the selected repo in your browser |
-| `i` / `Enter` | Open the detail panel (languages, release, CI, traffic, …) |
-| `a` | Archive the selected repo, or unarchive it if already archived |
-| `c` | Change the description of the selected repo |
-| `t` | Edit the selected repo's topics |
-| `h` | Edit the selected repo's homepage URL |
-| `s` | Sync the selected fork with its upstream |
-| `space` | Select/deselect the current repo (for bulk actions) |
-| `ctrl+a` | Select all visible repos (again to deselect) |
-| `b` | Bulk-action menu for the selected repos |
-| `d` | Delete the selected repo (modal asks you to retype the full name) |
-| `v` (in detail panel) | View the rendered README |
-| `/` | Open a filter prompt (substring match on name and description) |
 
-The filter is purely client-side; it narrows what's shown but does not
-re-query GitHub.
+## The detail panel
 
-## Modals
+Press `Enter` (or `i`) on any repo to open its dossier: description and
+topics, stars/forks/size/license, creation and update dates, a language
+breakdown, the latest release, the last CI run, the GitHub Pages URL,
+14-day traffic, the open issue/PR split, security posture (Dependabot and
+secret-scanning alert counts, vulnerability-alerts status), and Actions
+storage (artifacts and cache size).
 
-### Delete confirmation
+For forks there's an extra line — *⑂ fork of owner/repo — N ahead / M
+behind* — so you can tell at a glance whether `s` (sync) is worth pressing.
 
-A red-bordered modal shows the repo's full name and an `Input`. The
-deletion only proceeds if the value you type matches exactly. `Esc`
-cancels.
+Two things worth knowing:
 
-!!! note "Token scope: `delete_repo`"
-    If a delete fails with "Must have admin rights to Repository", your
-    token is missing the `delete_repo` scope. For `gh auth login` users,
-    run `gh auth refresh -h github.com -s delete_repo`. A PAT in
-    `GITHUB_TOKEN` must likewise be issued with `delete_repo`.
+- **Each row loads independently.** If your token can't see something (say,
+  traffic), that row shows `—` with a hint naming the permission — the rest
+  of the panel still fills in. See [Tokens & permissions](tokens.md).
+- **Results are cached** for the session, so reopening a panel is instant.
+  Press `r` to refresh from GitHub.
 
-### Filter
+From the panel, `v` opens the repo's README rendered right in the terminal —
+useful for answering "what *is* this repo?" before deleting it. `Esc` backs
+out of any screen.
 
-A simple text input. Submit empty to clear the filter; `Esc` keeps the
-previous value.
+## Deleting, safely
 
-### Edit description
+Press `d` on a repo and gman opens a red confirmation modal that:
 
-A text input pre-populated with the current description. Submit to send
-the new value to GitHub via PATCH; submit empty to clear the description.
-`Esc` cancels without making a request.
+1. **Warns you** if the repo has forks or stars, is public, or is pinned to
+   your profile — the situations where deleting is most likely to be a
+   mistake.
+2. Offers a **"Backup tarball first"** checkbox. When ticked, gman downloads
+   `{name}-{branch}.tar.gz` to the current directory before deleting — and
+   if that download fails, the deletion is **aborted**.
+3. Requires you to **retype the repo's full name**. No match, no deletion.
 
-### Detail panel
+`Esc` cancels at any point.
 
-`Enter` or `i` opens a lazy-loaded panel for the selected repo. Each row is
-fetched independently — fields your token can't access show `—` with a hint
-instead of failing. Results are cached until the repo changes or you refresh.
+## Bulk actions
 
-The panel includes rows for fork status (⑂ fork of owner/repo — N ahead / M behind),
-security posture (Dependabot alerts · secret-scanning · vulnerability alerts ON/OFF),
-and Actions storage (artifact count and cache count/size).
+The multi-select workflow turns an afternoon of clicking into a minute of
+key presses:
 
-### Delete confirmation extras
+1. Select repos with `space` (or grab everything visible with `ctrl+a` —
+   filter first with `/` to narrow the set). The ✓ column and the subtitle
+   track your selection.
+2. Press `b`. The menu offers:
+    - Archive / Unarchive
+    - Delete branch on merge → ON / OFF
+    - Wiki, Issues, Projects → ON / OFF
+    - Add topic… / Remove topic… (you'll be prompted for the topic)
+    - Vulnerability alerts → ON / OFF
+    - Automated security fixes → ON / OFF
+    - Sync fork with upstream (skips non-forks)
+    - Clear Actions artifacts / Clear Actions caches
+3. A confirmation screen shows the operation and the target list — press
+   `y` to proceed, `n` or `Esc` to back out.
+4. Operations run one repo at a time; the subtitle shows progress, and a
+   notification summarizes the outcome (`12 ok, 0 failed`). The table
+   refreshes and your selection clears when it finishes.
 
-The delete modal lists safety warnings (forks, stars, public, pinned) and has
-a "Backup tarball first" checkbox. If the backup download fails, the deletion
-is aborted.
-
-### Bulk actions
-
-`space` marks repos (✓ column); the subtitle shows the count. `b` opens the
-bulk menu — archive/unarchive, feature toggles, delete-branch-on-merge,
-add/remove a topic, Dependabot alert/fix toggles, syncing forks with upstream,
-and clearing Actions artifacts/caches. A confirmation screen shows the
-operation and target list (`y` to proceed). Operations run one repo at a time;
-the subtitle tracks progress and a notification summarizes ok/failed/skipped.
-The list refreshes when done.
+If GitHub rate-limits mid-run, the remaining repos are skipped and reported
+— nothing is left half-applied.

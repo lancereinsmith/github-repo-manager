@@ -52,7 +52,7 @@ gman excel --output ~/Desktop/repos.xlsx
 gman --api-url https://ghe.example.com/api/v3 list   # GitHub Enterprise
 ```
 
-See the [docs](docs/index.md) for full usage and configuration.
+See the [user manual](https://lreinsmith.github.io/gman/) for full usage and configuration.
 
 ## License
 

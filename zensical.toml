@@ -2,6 +2,7 @@
 site_name = "gman"
 site_description = "List, manage, and export your GitHub repositories from the terminal."
 site_author = "Lance Reinsmith"
+site_url = "https://lreinsmith.github.io/gman/"
 copyright = "&copy; 2026 Lance Reinsmith"
 repo_url = "https://github.com/lreinsmith/gman"
 
@@ -67,16 +68,19 @@ pygments_lang_class = true
 Home = "index.md"
 
 [[project.nav]]
-Usage = "usage.md"
+"Getting started" = "getting-started.md"
 
 [[project.nav]]
-Tokens = "tokens.md"
+Commands = "usage.md"
 
 [[project.nav]]
-TUI = "tui.md"
+"The TUI" = "tui.md"
+
+[[project.nav]]
+"Tokens & permissions" = "tokens.md"
 
 [[project.nav]]
 "Excel export" = "excel.md"
 
 [[project.nav]]
-API = "api.md"
+"Scripting with Python" = "api.md"

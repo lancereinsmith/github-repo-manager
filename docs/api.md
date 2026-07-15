@@ -1,6 +1,8 @@
-# Python API
+# Scripting with Python
 
-The package re-exports its top-level objects:
+Everything the CLI does is available as a small Python API — useful for
+one-off scripts and automation that outgrows `gman list --json`. The package
+re-exports its top-level objects:
 
 ```python
 from gman import GitHubClient, GitHubError, RateLimitError, write_excel

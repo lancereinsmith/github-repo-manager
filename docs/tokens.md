@@ -1,10 +1,14 @@
-# Choosing a token
+# Tokens & permissions
 
-gman works with any GitHub token and **degrades gracefully**: features the
-token can't perform hide themselves (TUI) or explain what's missing (CLI).
-Run `gman auth` to see what your current token can do.
+gman works with any GitHub token and **degrades gracefully**: features your
+token can't perform show a dash and a hint (TUI) or a message naming the
+missing permission (CLI) — never an error wall. Run `gman auth` at any time
+to see exactly what your current token unlocks.
 
-## Fine-grained PAT recipes (recommended for least privilege)
+You don't need to read this page to use gman — `gh auth login` and go.
+Read it when you want to grant gman *only* what it needs.
+
+## Fine-grained token recipes (least privilege)
 
 Create at <https://github.com/settings/personal-access-tokens/new>, choose
 repository access (all repos or selected), and grant one of these permission

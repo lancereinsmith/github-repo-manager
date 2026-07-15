@@ -1,7 +1,20 @@
 # Excel export
 
-The export is intentionally simple — four columns, banded rows, optimised
-for landscape printing.
+`gman excel` (or `e` in the TUI) writes your repository inventory to a
+spreadsheet you can hand to anyone. The layout is intentionally simple —
+four columns, banded rows, optimised for landscape printing.
+
+```bash
+gman excel                              # writes github_repos.xlsx
+gman excel --output ~/Desktop/repos.xlsx
+```
+
+!!! note "Where does the file go?"
+    By default the file is `github_repos.xlsx` **in the directory you run
+    the command from** — installation location doesn't matter. Pass
+    `--output` with any path to put it somewhere specific. The TUI's `e`
+    key likewise writes to the directory you launched `gman tui` from,
+    and `x` opens that same file.
 
 ## Columns
 
