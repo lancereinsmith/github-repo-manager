@@ -692,9 +692,7 @@ def test_template_pickers(client: GitHubClient) -> None:
 
 @responses.activate
 def test_delete_artifact_and_cache(client: GitHubClient) -> None:
-    responses.add(
-        responses.DELETE, f"{DEFAULT_API_URL}/repos/o/r/actions/artifacts/7", status=204
-    )
+    responses.add(responses.DELETE, f"{DEFAULT_API_URL}/repos/o/r/actions/artifacts/7", status=204)
     responses.add(responses.DELETE, f"{DEFAULT_API_URL}/repos/o/r/actions/caches/9", status=204)
 
     ok1, _ = client.delete_artifact("o/r", 7)
@@ -706,9 +704,7 @@ def test_delete_artifact_and_cache(client: GitHubClient) -> None:
 
 @responses.activate
 def test_rerun_workflow_variants(client: GitHubClient) -> None:
-    responses.add(
-        responses.POST, f"{DEFAULT_API_URL}/repos/o/r/actions/runs/1/rerun", status=201
-    )
+    responses.add(responses.POST, f"{DEFAULT_API_URL}/repos/o/r/actions/runs/1/rerun", status=201)
     responses.add(
         responses.POST,
         f"{DEFAULT_API_URL}/repos/o/r/actions/runs/2/rerun-failed-jobs",
@@ -723,8 +719,6 @@ def test_rerun_workflow_variants(client: GitHubClient) -> None:
 
 @responses.activate
 def test_cancel_workflow(client: GitHubClient) -> None:
-    responses.add(
-        responses.POST, f"{DEFAULT_API_URL}/repos/o/r/actions/runs/3/cancel", status=202
-    )
+    responses.add(responses.POST, f"{DEFAULT_API_URL}/repos/o/r/actions/runs/3/cancel", status=202)
     ok, msg = client.cancel_workflow("o/r", 3)
     assert ok and "Cancelled" in msg
