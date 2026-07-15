@@ -445,6 +445,17 @@ def cli_bulk(client: GitHubClient, args: argparse.Namespace) -> int:
     return 0
 
 
+def cli_sync(client: GitHubClient, full_name: str, branch: str | None) -> int:
+    repo = client.get_repo(full_name)
+    if not repo.get("fork"):
+        print(f"Error: {full_name} is not a fork.", file=sys.stderr)
+        return 1
+    target = branch or repo.get("default_branch") or "HEAD"
+    ok, msg = client.merge_upstream(full_name, target)
+    print(("✅ " if ok else "❌ ") + msg)
+    return 0 if ok else 1
+
+
 def cli_auth(client: GitHubClient, probe: bool) -> int:
     login = client.whoami()  # also captures X-OAuth-Scopes on the first response
     if login is None:
@@ -539,6 +550,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_bulk.add_argument("--yes", "-y", action="store_true", help="Skip confirmation.")
     _add_field_flags(p_bulk, bulk=True)
 
+    p_sync = sub.add_parser("sync", help="Sync a fork with its upstream.")
+    p_sync.add_argument("repo_name", help="username/repo (must be a fork)")
+    p_sync.add_argument(
+        "--branch",
+        help="Branch to sync (default: the repo's default branch).",
+    )
+
     p_info = sub.add_parser("info", help="Show detailed info for one repo.")
     p_info.add_argument("repo_name", help="username/repo")
     p_info.add_argument("--json", dest="as_json", action="store_true")
@@ -582,6 +600,8 @@ def main(argv: list[str] | None = None) -> int:
             return cli_edit(client, args)
         if args.command == "bulk":
             return cli_bulk(client, args)
+        if args.command == "sync":
+            return cli_sync(client, args.repo_name, args.branch)
         if args.command == "info":
             return cli_info(client, args.repo_name, args.as_json)
         if args.command == "auth":

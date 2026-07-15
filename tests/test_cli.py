@@ -442,3 +442,46 @@ def test_bulk_add_topic_applies_normalized(capsys) -> None:
 
     assert rc == 0
     assert fake.topic_calls == [("octocat/a", ["old", "python"])]
+
+
+def test_sync_happy_path(capsys) -> None:
+    class FakeClient:
+        def get_repo(self, full):
+            return make_repo("f", fork=True, default_branch="dev")
+
+        def merge_upstream(self, full, branch):
+            return True, f"Synced {full} with upstream ({branch})"
+
+    rc = cli.cli_sync(FakeClient(), "octocat/f", branch=None)
+    out = capsys.readouterr().out
+    assert rc == 0 and "dev" in out  # default branch used
+
+
+def test_sync_not_a_fork(capsys) -> None:
+    class FakeClient:
+        def get_repo(self, full):
+            return make_repo("r")  # fork=False
+
+    rc = cli.cli_sync(FakeClient(), "octocat/r", branch=None)
+    assert rc == 1
+    assert "not a fork" in capsys.readouterr().err
+
+
+def test_sync_branch_override(capsys) -> None:
+    seen = []
+
+    class FakeClient:
+        def get_repo(self, full):
+            return make_repo("f", fork=True)
+
+        def merge_upstream(self, full, branch):
+            seen.append(branch)
+            return True, "ok"
+
+    rc = cli.cli_sync(FakeClient(), "octocat/f", branch="release")
+    assert rc == 0 and seen == ["release"]
+
+
+def test_parser_accepts_sync() -> None:
+    args = cli.build_parser().parse_args(["sync", "o/r", "--branch", "main"])
+    assert args.command == "sync" and args.branch == "main"
