@@ -25,6 +25,7 @@ FIELD_FAMILIES: dict[str, str] = {
     "dependabot_alerts": "dependabot.read",
     "secret_alerts": "secret_scanning.read",
     "vulnerability_alerts_enabled": "admin.read",
+    "actions_storage": "actions.read",
 }
 
 
@@ -43,6 +44,7 @@ class RepoDetails:
     dependabot_alerts: int | None = None
     secret_alerts: int | None = None
     vulnerability_alerts_enabled: bool | None = None
+    actions_storage: dict[str, Any] | None = None
     hints: dict[str, str] = field(default_factory=dict)  # field name -> denial hint
 
     @property
@@ -74,6 +76,19 @@ def _fork_status(client: GitHubClient, repo: dict[str, Any]) -> dict[str, Any] |
     }
 
 
+def _actions_storage(client: GitHubClient, full_name: str) -> dict[str, Any] | None:
+    """Artifact count + cache usage; None when Actions data is unavailable."""
+    count = client.get_artifact_count(full_name)
+    usage = client.get_actions_cache_usage(full_name)
+    if count is None or usage is None:
+        return None
+    return {
+        "artifact_count": count,
+        "cache_bytes": usage.get("active_caches_size_in_bytes", 0),
+        "cache_count": usage.get("active_caches_count", 0),
+    }
+
+
 def fetch_details(client: GitHubClient, repo: dict[str, Any]) -> RepoDetails:
     """Fetch all detail fields concurrently; each degrades independently."""
     full = repo["full_name"]
@@ -87,6 +102,7 @@ def fetch_details(client: GitHubClient, repo: dict[str, Any]) -> RepoDetails:
         "dependabot_alerts": lambda: client.get_open_dependabot_alert_count(full),
         "secret_alerts": lambda: client.get_open_secret_alert_count(full),
         "vulnerability_alerts_enabled": lambda: client.get_vulnerability_alerts_enabled(full),
+        "actions_storage": lambda: _actions_storage(client, full),
     }
     if repo.get("fork"):
         tasks["fork_status"] = lambda: _fork_status(client, repo)
@@ -280,6 +296,16 @@ def render_details(details: RepoDetails) -> Table:
         "Security",
         f"Dependabot alerts: {dep} · secret-scanning: {sec} · vulnerability alerts: {va}",
     )
+
+    st = details.actions_storage
+    if st is not None:
+        mb = st["cache_bytes"] / 1_000_000
+        grid.add_row(
+            "Actions storage",
+            f"{st['artifact_count']} artifacts · {mb:.0f} MB cache ({st['cache_count']} entries)",
+        )
+    else:
+        grid.add_row("Actions storage", dash("actions_storage"))
     return grid
 
 
@@ -332,4 +358,5 @@ def details_to_dict(details: RepoDetails) -> dict[str, Any]:
         "dependabot_alerts": details.dependabot_alerts,
         "secret_alerts": details.secret_alerts,
         "vulnerability_alerts_enabled": details.vulnerability_alerts_enabled,
+        "actions_storage": details.actions_storage,
     }

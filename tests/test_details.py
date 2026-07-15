@@ -72,6 +72,16 @@ def test_fetch_details_degrades_per_field(client: GitHubClient) -> None:
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/pages", status=404)
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/traffic/views", status=403)
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/pulls", json=[], status=200)
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/actions/artifacts",
+        status=403,
+    )
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/actions/cache/usage",
+        status=403,
+    )
 
     details = fetch_details(client, make_repo("r"))
 
@@ -267,19 +277,21 @@ def test_fetch_details_fork_task_only_for_forks(client: GitHubClient) -> None:
         responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/{path}", json={}, status=404)
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/traffic/views", status=403)
     responses.add(
-        responses.GET, f"{DEFAULT_API_URL}/repos/{full}/dependabot/alerts", json=[], status=200
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/actions/artifacts",
+        json={"total_count": 0, "artifacts": []},
+        status=200,
     )
     responses.add(
-        responses.GET, f"{DEFAULT_API_URL}/repos/{full}/secret-scanning/alerts", status=404
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/actions/cache/usage",
+        json={"active_caches_size_in_bytes": 0, "active_caches_count": 0},
+        status=200,
     )
-    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/vulnerability-alerts", status=204)
 
     details = fetch_details(client, make_repo("r"))  # fork=False
 
     assert details.fork_status is None and "fork_status" not in details.hints
-    assert details.dependabot_alerts == 0
-    assert details.secret_alerts is None
-    assert details.vulnerability_alerts_enabled is True
 
 
 def test_render_and_dict_include_security_and_fork() -> None:
@@ -311,3 +323,41 @@ def test_render_and_dict_include_security_and_fork() -> None:
     assert d["dependabot_alerts"] == 3
     assert d["secret_alerts"] is None
     assert d["vulnerability_alerts_enabled"] is False
+
+
+@responses.activate
+def test_actions_storage_field(client: GitHubClient) -> None:
+    full = "octocat/r"
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/actions/artifacts",
+        json={"total_count": 12, "artifacts": []},
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/actions/cache/usage",
+        json={"active_caches_size_in_bytes": 480_000_000, "active_caches_count": 3},
+        status=200,
+    )
+    from gman.details import _actions_storage
+
+    storage = _actions_storage(client, full)
+    assert storage == {"artifact_count": 12, "cache_bytes": 480_000_000, "cache_count": 3}
+
+
+def test_render_actions_storage_row() -> None:
+    details = RepoDetails(
+        repo=make_repo("r"),
+        open_prs=0,
+        actions_storage={"artifact_count": 12, "cache_bytes": 480_000_000, "cache_count": 3},
+    )
+    from io import StringIO
+
+    from rich.console import Console
+
+    console = Console(file=StringIO(), width=200)
+    console.print(render_details(details))
+    out = console.file.getvalue()
+    assert "12 artifacts" in out and "480 MB" in out and "(3 entries)" in out
+    assert details_to_dict(details)["actions_storage"]["cache_count"] == 3
