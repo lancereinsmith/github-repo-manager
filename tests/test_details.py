@@ -84,10 +84,12 @@ def test_fetch_details_degrades_per_field(client: GitHubClient) -> None:
         f"{DEFAULT_API_URL}/repos/{full}/secret-scanning/alerts",
         status=404,
     )
+    # 403 (not 204): a 204 would mark admin.read allowed and race against
+    # traffic's 403 denial mark, making the traffic-hint assertion flaky.
     responses.add(
         responses.GET,
         f"{DEFAULT_API_URL}/repos/{full}/vulnerability-alerts",
-        status=204,
+        status=403,
     )
     responses.add(
         responses.GET,
@@ -109,6 +111,7 @@ def test_fetch_details_degrades_per_field(client: GitHubClient) -> None:
     assert details.open_issues == 0
     # traffic denied (admin.read) → None + hinted
     assert details.traffic is None and "traffic" in details.hints
+    assert details.vulnerability_alerts_enabled is None
     assert details.actions_storage is None and "actions_storage" in details.hints
     # pages absent (404 = true absence) → None WITHOUT hint
     assert details.pages is None and "pages" not in details.hints
