@@ -503,6 +503,50 @@ class GitHubClient:
         )
         return (r.json().get("workflow_runs") or []) if r is not None else None
 
+    def delete_artifact(self, full_name: str, artifact_id: int) -> tuple[bool, str]:
+        """Delete one Actions artifact. Returns `(ok, message)`."""
+        return self._mutate(
+            "DELETE",
+            f"/repos/{full_name}/actions/artifacts/{artifact_id}",
+            ok_codes=(204,),
+            success_msg=f"Deleted artifact {artifact_id}",
+            family="actions.write",
+        )
+
+    def delete_cache(self, full_name: str, cache_id: int) -> tuple[bool, str]:
+        """Delete one Actions cache entry. Returns `(ok, message)`."""
+        return self._mutate(
+            "DELETE",
+            f"/repos/{full_name}/actions/caches/{cache_id}",
+            ok_codes=(204,),
+            success_msg=f"Deleted cache {cache_id}",
+            family="actions.write",
+        )
+
+    def rerun_workflow(
+        self, full_name: str, run_id: int, failed_only: bool = False
+    ) -> tuple[bool, str]:
+        """Re-run a workflow run (optionally only its failed jobs)."""
+        suffix = "rerun-failed-jobs" if failed_only else "rerun"
+        what = "failed jobs of run" if failed_only else "run"
+        return self._mutate(
+            "POST",
+            f"/repos/{full_name}/actions/runs/{run_id}/{suffix}",
+            ok_codes=(201,),
+            success_msg=f"Re-ran {what} {run_id} on {full_name}",
+            family="actions.write",
+        )
+
+    def cancel_workflow(self, full_name: str, run_id: int) -> tuple[bool, str]:
+        """Cancel an in-progress workflow run."""
+        return self._mutate(
+            "POST",
+            f"/repos/{full_name}/actions/runs/{run_id}/cancel",
+            ok_codes=(202,),
+            success_msg=f"Cancelled run {run_id} on {full_name}",
+            family="actions.write",
+        )
+
     def get_gitignore_templates(self) -> list[str] | None:
         """Available gitignore template names (no permissions required)."""
         r = self._get_optional("metadata.read", "/gitignore/templates")

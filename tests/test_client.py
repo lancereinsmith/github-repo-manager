@@ -688,3 +688,43 @@ def test_template_pickers(client: GitHubClient) -> None:
     assert client.get_gitignore_templates() == ["Python", "Go"]
     licenses = client.get_license_templates()
     assert licenses is not None and licenses[0]["key"] == "mit"
+
+
+@responses.activate
+def test_delete_artifact_and_cache(client: GitHubClient) -> None:
+    responses.add(
+        responses.DELETE, f"{DEFAULT_API_URL}/repos/o/r/actions/artifacts/7", status=204
+    )
+    responses.add(responses.DELETE, f"{DEFAULT_API_URL}/repos/o/r/actions/caches/9", status=204)
+
+    ok1, _ = client.delete_artifact("o/r", 7)
+    ok2, _ = client.delete_cache("o/r", 9)
+
+    assert ok1 and ok2
+    assert client.capabilities.resolve("actions.write") is True
+
+
+@responses.activate
+def test_rerun_workflow_variants(client: GitHubClient) -> None:
+    responses.add(
+        responses.POST, f"{DEFAULT_API_URL}/repos/o/r/actions/runs/1/rerun", status=201
+    )
+    responses.add(
+        responses.POST,
+        f"{DEFAULT_API_URL}/repos/o/r/actions/runs/2/rerun-failed-jobs",
+        status=201,
+    )
+
+    ok1, msg1 = client.rerun_workflow("o/r", 1)
+    ok2, _ = client.rerun_workflow("o/r", 2, failed_only=True)
+
+    assert ok1 and ok2 and "Re-ran" in msg1
+
+
+@responses.activate
+def test_cancel_workflow(client: GitHubClient) -> None:
+    responses.add(
+        responses.POST, f"{DEFAULT_API_URL}/repos/o/r/actions/runs/3/cancel", status=202
+    )
+    ok, msg = client.cancel_workflow("o/r", 3)
+    assert ok and "Cancelled" in msg
