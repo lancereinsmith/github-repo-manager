@@ -54,6 +54,9 @@ FAMILY_FEATURES = {
     "pages.read": "Pages URL",
     "admin.read": "traffic stats",
     "pulls.read": "open PR/issue split",
+    "dependabot.read": "Dependabot alert counts",
+    "secret_scanning.read": "secret-scanning alert counts",
+    "contents.write": "sync fork with upstream",
     "admin.write": "archive, describe, and other writes",
     "delete": "delete repos",
 }

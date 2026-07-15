@@ -65,3 +65,26 @@ def test_hints_exist_for_all_families() -> None:
     cache = CapabilityCache(TokenInfo())
     for family in ALL_FAMILIES:
         assert cache.hint(family)  # non-empty string
+
+
+def test_phase3_families_present() -> None:
+    from gman.capabilities import ALL_FAMILIES, READ_FAMILIES, WRITE_FAMILIES
+
+    assert "dependabot.read" in READ_FAMILIES
+    assert "secret_scanning.read" in READ_FAMILIES
+    assert "contents.write" in WRITE_FAMILIES
+    assert len(ALL_FAMILIES) == 10
+
+
+def test_phase3_families_resolve_and_hint() -> None:
+    cache = CapabilityCache(TokenInfo(kind="classic", scopes={"repo"}))
+    for family in ("dependabot.read", "secret_scanning.read", "contents.write"):
+        assert cache.resolve(family) is True
+        assert cache.hint(family)
+
+
+def test_auth_table_covers_all_families() -> None:
+    from gman.capabilities import ALL_FAMILIES
+    from gman.cli import FAMILY_FEATURES
+
+    assert set(FAMILY_FEATURES) == set(ALL_FAMILIES)

@@ -18,8 +18,10 @@ READ_FAMILIES: tuple[str, ...] = (
     "pages.read",
     "admin.read",
     "pulls.read",
+    "dependabot.read",
+    "secret_scanning.read",
 )
-WRITE_FAMILIES: tuple[str, ...] = ("admin.write", "delete")
+WRITE_FAMILIES: tuple[str, ...] = ("contents.write", "admin.write", "delete")
 ALL_FAMILIES: tuple[str, ...] = READ_FAMILIES + WRITE_FAMILIES
 
 FAMILY_HINTS: dict[str, str] = {
@@ -32,6 +34,13 @@ FAMILY_HINTS: dict[str, str] = {
         "traffic also needs push access"
     ),
     "pulls.read": "needs Pull requests: read (fine-grained) or repo scope (classic)",
+    "dependabot.read": (
+        "needs Dependabot alerts: read (fine-grained) or security_events/repo scope (classic)"
+    ),
+    "secret_scanning.read": (
+        "needs Secret scanning alerts: read (fine-grained) or security_events/repo scope (classic)"
+    ),
+    "contents.write": "needs Contents: write (fine-grained) or repo scope (classic)",
     "admin.write": "needs Administration: write (fine-grained) or repo scope (classic)",
     "delete": "needs Administration: write (fine-grained) or delete_repo scope (classic)",
 }
