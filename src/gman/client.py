@@ -166,9 +166,10 @@ class GitHubClient:
         path: str,
         *,
         ok_codes: tuple[int, ...],
-        success_msg: str,
+        success_msg: str = "",
         family: str = "admin.write",
         json: dict[str, Any] | None = None,
+        success_fn: Callable[[requests.Response], str] | None = None,
     ) -> tuple[bool, str]:
         """Perform a write request, feeding the capability cache.
 
@@ -185,7 +186,7 @@ class GitHubClient:
             self.capabilities.mark(family, False)
         if r.status_code in ok_codes:
             self.capabilities.mark(family, True)
-            return True, success_msg
+            return True, success_fn(r) if success_fn is not None else success_msg
         return False, f"HTTP {r.status_code}: {r.text[:160]}"
 
     def update_repo(self, full_name: str, fields: dict[str, Any]) -> tuple[bool, str]:
@@ -435,6 +436,26 @@ class GitHubClient:
             f"/repos/{full_name}/automated-security-fixes",
             ok_codes=(204,),
             success_msg=f"{verb} automated security fixes on {full_name}",
+        )
+
+    def _created_msg(self, r: requests.Response) -> str:
+        body = r.json()
+        return f"Created {body.get('full_name')} — {body.get('html_url')}"
+
+    def create_repo(self, fields: dict[str, Any]) -> tuple[bool, str]:
+        """Create a repository for the authenticated user. Returns `(ok, message)`."""
+        return self._mutate(
+            "POST", "/user/repos", ok_codes=(201,), json=fields, success_fn=self._created_msg
+        )
+
+    def create_from_template(self, template_full: str, fields: dict[str, Any]) -> tuple[bool, str]:
+        """Generate a repository from a template repo. Returns `(ok, message)`."""
+        return self._mutate(
+            "POST",
+            f"/repos/{template_full}/generate",
+            ok_codes=(201,),
+            json=fields,
+            success_fn=self._created_msg,
         )
 
     def compare(self, full_name: str, basehead: str) -> dict[str, Any] | None:

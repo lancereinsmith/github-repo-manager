@@ -722,3 +722,40 @@ def test_cancel_workflow(client: GitHubClient) -> None:
     responses.add(responses.POST, f"{DEFAULT_API_URL}/repos/o/r/actions/runs/3/cancel", status=202)
     ok, msg = client.cancel_workflow("o/r", 3)
     assert ok and "Cancelled" in msg
+
+
+@responses.activate
+def test_create_repo_success_message_from_response(client: GitHubClient) -> None:
+    responses.add(
+        responses.POST,
+        f"{DEFAULT_API_URL}/user/repos",
+        json={"full_name": "octocat/new", "html_url": "https://github.com/octocat/new"},
+        status=201,
+    )
+    ok, msg = client.create_repo({"name": "new", "private": True})
+    assert ok and msg == "Created octocat/new — https://github.com/octocat/new"
+    assert jsonlib.loads(responses.calls[0].request.body) == {"name": "new", "private": True}
+
+
+@responses.activate
+def test_create_repo_name_taken(client: GitHubClient) -> None:
+    responses.add(
+        responses.POST,
+        f"{DEFAULT_API_URL}/user/repos",
+        json={"message": "name already exists on this account"},
+        status=422,
+    )
+    ok, msg = client.create_repo({"name": "dupe"})
+    assert not ok and "422" in msg
+
+
+@responses.activate
+def test_create_from_template(client: GitHubClient) -> None:
+    responses.add(
+        responses.POST,
+        f"{DEFAULT_API_URL}/repos/tpl/base/generate",
+        json={"full_name": "octocat/gen", "html_url": "https://github.com/octocat/gen"},
+        status=201,
+    )
+    ok, msg = client.create_from_template("tpl/base", {"name": "gen"})
+    assert ok and "octocat/gen" in msg
