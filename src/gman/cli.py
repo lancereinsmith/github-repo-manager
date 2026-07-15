@@ -58,6 +58,7 @@ FAMILY_FEATURES = {
     "dependabot.read": "Dependabot alert counts",
     "secret_scanning.read": "secret-scanning alert counts",
     "contents.write": "sync fork with upstream",
+    "actions.write": "clear artifacts/caches, re-run and cancel workflow runs",
     "admin.write": "archive, describe, and other writes",
     "delete": "delete repos",
 }

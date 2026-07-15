@@ -73,7 +73,7 @@ def test_phase3_families_present() -> None:
     assert "dependabot.read" in READ_FAMILIES
     assert "secret_scanning.read" in READ_FAMILIES
     assert "contents.write" in WRITE_FAMILIES
-    assert len(ALL_FAMILIES) == 10
+    assert len(ALL_FAMILIES) == 11
 
 
 def test_phase3_families_resolve_and_hint() -> None:
@@ -81,6 +81,16 @@ def test_phase3_families_resolve_and_hint() -> None:
     for family in ("dependabot.read", "secret_scanning.read", "contents.write"):
         assert cache.resolve(family) is True
         assert cache.hint(family)
+
+
+def test_phase4_actions_write_family() -> None:
+    from gman.capabilities import ALL_FAMILIES, WRITE_FAMILIES
+
+    assert WRITE_FAMILIES == ("contents.write", "actions.write", "admin.write", "delete")
+    assert len(ALL_FAMILIES) == 11
+    cache = CapabilityCache(TokenInfo(kind="classic", scopes={"repo"}))
+    assert cache.resolve("actions.write") is True
+    assert cache.hint("actions.write")
 
 
 def test_auth_table_covers_all_families() -> None:
