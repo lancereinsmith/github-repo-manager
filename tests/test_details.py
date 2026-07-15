@@ -118,6 +118,46 @@ def test_fetch_details_degrades_per_field(client: GitHubClient) -> None:
 
 
 @responses.activate
+def test_traffic_denied_with_vuln_enabled_is_deterministic(client: GitHubClient) -> None:
+    """Token with admin.read but no push: vuln-check succeeds, traffic 403s.
+
+    admin.read must deterministically resolve True (vuln is definitive; traffic
+    is push-confounded), and traffic renders unhinted.
+    """
+    full = "octocat/r"
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/languages", json={}, status=200)
+    for path in ("releases/latest", "actions/runs", "pages"):
+        responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/{path}", status=404)
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/traffic/views", status=403)
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/pulls", json=[], status=200)
+    responses.add(
+        responses.GET, f"{DEFAULT_API_URL}/repos/{full}/dependabot/alerts", json=[], status=200
+    )
+    responses.add(
+        responses.GET, f"{DEFAULT_API_URL}/repos/{full}/secret-scanning/alerts", status=404
+    )
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/{full}/vulnerability-alerts", status=204)
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/actions/artifacts",
+        json={"total_count": 0, "artifacts": []},
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/{full}/actions/cache/usage",
+        json={"active_caches_size_in_bytes": 0, "active_caches_count": 0},
+        status=200,
+    )
+
+    details = fetch_details(client, make_repo("r"))
+
+    assert details.vulnerability_alerts_enabled is True
+    assert details.traffic is None and "traffic" not in details.hints
+    assert client.capabilities.resolve("admin.read") is True
+
+
+@responses.activate
 def test_backup_repo_names_file(client: GitHubClient, tmp_path: Path) -> None:
     responses.add(
         responses.GET,
@@ -175,7 +215,9 @@ def test_probe_capabilities_marks_read_families(client: GitHubClient) -> None:
     assert caps.resolve("contents.read") is True
     assert caps.resolve("actions.read") is False
     assert caps.resolve("pages.read") is True  # 404 = authz passed
-    assert caps.resolve("admin.read") is False
+    # Traffic 403s no longer teach the cache (push-access-confounded), and
+    # probe_capabilities has no other admin.read-marking call here.
+    assert caps.resolve("admin.read") is None
     assert caps.resolve("pulls.read") is True
     assert caps.resolve("dependabot.read") is True
     assert caps.resolve("secret_scanning.read") is True  # 404 = authz passed

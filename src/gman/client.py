@@ -139,6 +139,7 @@ class GitHubClient:
         *,
         headers: dict[str, str] | None = None,
         params: dict[str, Any] | None = None,
+        mark_denied: bool = True,
     ) -> requests.Response | None:
         """GET a resource that may be permission-gated or absent.
 
@@ -147,10 +148,15 @@ class GitHubClient:
         fine-grained permission failures are 403, so a 404 means authz
         passed and the resource simply doesn't exist). Other statuses
         return ``None`` without marking.
+
+        Pass `mark_denied=False` for endpoints whose 403 conflates a
+        repo-level condition (e.g. traffic's push-access requirement) with
+        the token permission.
         """
         r = self._request("GET", path, headers=headers, params=params)
         if r.status_code == 403:
-            self.capabilities.mark(family, False)
+            if mark_denied:
+                self.capabilities.mark(family, False)
             return None
         if r.status_code == 404:
             self.capabilities.mark(family, True)
@@ -320,11 +326,18 @@ class GitHubClient:
         """Return 14-day traffic counters, or `None` if unavailable.
 
         Requires push access to the repo in addition to Administration: read.
+        A 403 here is push-access-confounded — it may reflect missing push
+        access rather than missing admin.read — so it does NOT teach the
+        capability cache (`mark_denied=False`).
         """
-        views = self._get_optional("admin.read", f"/repos/{full_name}/traffic/views")
+        views = self._get_optional(
+            "admin.read", f"/repos/{full_name}/traffic/views", mark_denied=False
+        )
         if views is None:
             return None
-        clones = self._get_optional("admin.read", f"/repos/{full_name}/traffic/clones")
+        clones = self._get_optional(
+            "admin.read", f"/repos/{full_name}/traffic/clones", mark_denied=False
+        )
         if clones is None:
             return None
         v, c = views.json(), clones.json()

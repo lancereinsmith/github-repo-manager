@@ -304,7 +304,17 @@ def test_traffic_combines_views_and_clones(client: GitHubClient) -> None:
 def test_traffic_denied_returns_none(client: GitHubClient) -> None:
     responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/r/traffic/views", status=403)
     assert client.get_traffic("o/r") is None
-    assert client.capabilities.resolve("admin.read") is False
+    # Traffic 403s are push-access-confounded, so they must not teach the
+    # capability cache (sanctioned semantic change — see test below).
+    assert client.capabilities.resolve("admin.read") is None
+
+
+@responses.activate
+def test_traffic_403_does_not_mark_admin_read(client: GitHubClient) -> None:
+    """Traffic 403s conflate push access — they must not teach the capability cache."""
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/r/traffic/views", status=403)
+    assert client.get_traffic("o/r") is None
+    assert client.capabilities.resolve("admin.read") is None  # NOT False
 
 
 @responses.activate

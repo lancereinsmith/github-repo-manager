@@ -109,15 +109,21 @@ def fetch_details(client: GitHubClient, repo: dict[str, Any]) -> RepoDetails:
     details = RepoDetails(repo=repo)
     with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
         futures = {name: pool.submit(fn) for name, fn in tasks.items()}
+        values: dict[str, Any] = {}
+        errors: dict[str, str] = {}
         for name, fut in futures.items():
             try:
-                value = fut.result()
+                values[name] = fut.result()
             except GitHubError as e:
-                details.hints[name] = f"error: {e}"
-                continue
-            setattr(details, name, value)
-            if value is None and client.capabilities.resolve(FIELD_FAMILIES[name]) is False:
-                details.hints[name] = client.capabilities.hint(FIELD_FAMILIES[name])
+                errors[name] = f"error: {e}"
+    # Executor context exit joins all threads, so every capability mark has
+    # landed before any hint check below — no intra-fetch ordering sensitivity.
+    for name, err in errors.items():
+        details.hints[name] = err
+    for name, value in values.items():
+        setattr(details, name, value)
+        if value is None and client.capabilities.resolve(FIELD_FAMILIES[name]) is False:
+            details.hints[name] = client.capabilities.hint(FIELD_FAMILIES[name])
     return details
 
 
