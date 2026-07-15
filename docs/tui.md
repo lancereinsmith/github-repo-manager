@@ -67,8 +67,9 @@ the new value to GitHub via PATCH; submit empty to clear the description.
 fetched independently — fields your token can't access show `—` with a hint
 instead of failing. Results are cached until the repo changes or you refresh.
 
-The panel includes rows for fork status (⑂ fork of owner/repo — N ahead / M behind)
-and security posture (Dependabot alerts · secret-scanning · vulnerability alerts ON/OFF).
+The panel includes rows for fork status (⑂ fork of owner/repo — N ahead / M behind),
+security posture (Dependabot alerts · secret-scanning · vulnerability alerts ON/OFF),
+and Actions storage (artifact count and cache count/size).
 
 ### Delete confirmation extras
 
@@ -80,7 +81,8 @@ is aborted.
 
 `space` marks repos (✓ column); the subtitle shows the count. `b` opens the
 bulk menu — archive/unarchive, feature toggles, delete-branch-on-merge,
-add/remove a topic, Dependabot alert/fix toggles, and syncing forks with upstream. A confirmation screen
-shows the operation and target list (`y` to proceed). Operations run one repo
-at a time; the subtitle tracks progress and a notification summarizes
-ok/failed/skipped. The list refreshes when done.
+add/remove a topic, Dependabot alert/fix toggles, syncing forks with upstream,
+and clearing Actions artifacts/caches. A confirmation screen shows the
+operation and target list (`y` to proceed). Operations run one repo at a time;
+the subtitle tracks progress and a notification summarizes ok/failed/skipped.
+The list refreshes when done.

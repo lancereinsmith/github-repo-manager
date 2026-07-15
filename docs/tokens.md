@@ -14,7 +14,7 @@ sets:
 | --- | --- | --- |
 | Read-only inventory | Metadata: read (automatic) + Contents: read | list, excel, info (partial), README preview, backup download |
 | Dashboard | + Actions: read, Pages: read, Pull requests: read, Administration: read, Dependabot alerts: read, Secret scanning alerts: read | full detail panel incl. CI status, Pages, traffic, issue/PR split, alert counts, and security status |
-| Manager | + Administration: write, Contents: write | archive, describe, `edit`, `bulk`, topics, Dependabot alert/fix toggles, `sync` fork with upstream, **delete** — fine-grained tokens bundle delete under Administration: write |
+| Manager | + Administration: write, Contents: write, Actions: write | archive, describe, `edit`, `bulk`, topics, Dependabot alert/fix toggles, `sync` fork with upstream, `actions` cleanup/re-run/cancel, **delete** — fine-grained tokens bundle delete under Administration: write |
 
 Fine-grained tokens cannot be introspected (GitHub sends no scope header), so
 `gman auth` shows `unknown` until a feature is used or you run
@@ -30,6 +30,11 @@ immediately.
 - `gh auth token` (gman's fallback) is always a classic token with
   `repo, read:org, gist` — add delete with
   `gh auth refresh -h github.com -s delete_repo`.
+
+!!! note
+    The `gman new` template/license pickers (`--list-gitignores`,
+    `--list-licenses`) work with any token — they access public APIs that
+    require no special permissions.
 
 ## Known gaps
 

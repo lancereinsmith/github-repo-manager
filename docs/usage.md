@@ -1,7 +1,7 @@
 # Usage
 
 ```bash
-gman [--token TOKEN] [--api-url URL] {list,delete,archive,describe,edit,bulk,info,auth,excel,tui} [...]
+gman [--token TOKEN] [--api-url URL] {list,delete,archive,describe,edit,bulk,sync,actions,new,info,auth,excel,tui} [...]
 ```
 
 If `--token` is omitted, `GITHUB_TOKEN` is used; failing that, the token
@@ -108,8 +108,8 @@ gman bulk --all --vulnerability-alerts on
 ```
 
 Bulk-only flags: `--archive`/`--unarchive`, `--vulnerability-alerts {on,off}`,
-`--security-fixes {on,off}`, `--sync-fork`. `--rename`, `--description`, and `--topics`
-(replace-all) are deliberately not available in bulk.
+`--security-fixes {on,off}`, `--sync-fork`, `--clear-artifacts`, `--clear-caches`.
+`--rename`, `--description`, and `--topics` (replace-all) are deliberately not available in bulk.
 
 The command lists the operations and targets, then asks `Proceed? [y/N]`
 unless `--yes`. `--dry-run` stops after the listing. Writes run one repo at a
@@ -128,6 +128,71 @@ gman sync username/my-fork --branch release
 Defaults to the repo's default branch. A merge conflict returns an error —
 resolve it locally. Bulk variant: `gman bulk --all --sync-fork` (non-forks are
 skipped). Needs `Contents: write` (fine-grained) or `repo` scope (classic).
+
+## `actions`
+
+Manage GitHub Actions artifacts, caches, and workflow runs. With no flags,
+shows the 5 most recent runs, artifact count and total size, and cache count
+and total size. Pass one action flag to modify them.
+
+```bash
+gman actions username/repo
+gman actions username/repo --clear-artifacts
+gman actions username/repo --clear-artifacts --older-than 30
+gman actions username/repo --clear-caches
+gman actions username/repo --rerun RUN_ID
+gman actions username/repo --rerun RUN_ID --failed-only
+gman actions username/repo --cancel RUN_ID
+```
+
+Flags:
+- `--clear-artifacts` removes all artifacts (optionally filtered by age).
+- `--older-than DAYS` limits `--clear-artifacts` to artifacts older than N days.
+- `--clear-caches` removes all caches.
+- `--rerun RUN_ID` reruns a workflow run by ID; `--failed-only` reruns only
+  failed jobs.
+- `--cancel RUN_ID` cancels a workflow run by ID.
+
+Exit code is 0 only if the operation succeeded. Bulk variant:
+`gman bulk --all --clear-artifacts` and `gman bulk --all --clear-caches`.
+Needs `Actions: write` (fine-grained) — see [Choosing a token](tokens.md).
+
+## `new`
+
+Create a new repository. Choose between direct creation or cloning from a
+template repo. The `--list-gitignores` and `--list-licenses` flags list
+available templates.
+
+```bash
+gman new my-repo
+gman new my-repo --private --description "A short description"
+gman new my-repo --auto-init --gitignore Python --license MIT
+gman new my-repo --template owner/template-repo
+gman new my-repo --template owner/template-repo --private
+gman new --list-gitignores
+gman new --list-licenses
+```
+
+**Direct creation** (default):
+- `--private` makes the repo private.
+- `--description TEXT` sets the description.
+- `--homepage URL` sets the homepage URL.
+- `--auto-init` initializes with a README.
+- `--gitignore TEMPLATE` applies a `.gitignore` template (run
+  `gman new --list-gitignores` to see available templates).
+- `--license TEMPLATE` applies a license template (run
+  `gman new --list-licenses` to see available).
+
+**Template mode** (pass `--template owner/repo`):
+- `--private` makes the repo private.
+- `--description TEXT` sets the description.
+- `--include-all-branches` includes all branches from the template.
+- Cannot use `--auto-init`, `--gitignore`, `--license`, or `--homepage`.
+
+After successful creation, a clone hint is printed. Needs `repo` scope
+(classic) or fine-grained token with all necessary repo permissions. The
+template/license pickers (`--list-gitignores`, `--list-licenses`) require no
+special permissions.
 
 ## `delete`
 

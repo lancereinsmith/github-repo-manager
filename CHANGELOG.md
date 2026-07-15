@@ -32,6 +32,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Security posture in the detail panel and `info`: open Dependabot and
   secret-scanning alert counts plus vulnerability-alerts status, with three
   new capability families surfaced in `gman auth`.
+- `actions` command to manage workflow runs, artifacts, and caches:
+  `--clear-artifacts` / `--older-than DAYS`, `--clear-caches`, `--rerun RUN_ID` /
+  `--failed-only`, `--cancel RUN_ID`; bulk variant for clearing artifacts/caches.
+- Actions storage row in the TUI detail panel (artifact count, cache
+  count/size).
+- `new` command to create repos directly or from templates, with
+  `--list-gitignores` / `--list-licenses` pickers and template mode
+  (`--template owner/repo`) for cloning repos.
 
 ## [0.1.0] - 2026-07-14
 
