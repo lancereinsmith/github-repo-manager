@@ -13,8 +13,8 @@ sets:
 | Tier | Permissions | What works |
 | --- | --- | --- |
 | Read-only inventory | Metadata: read (automatic) + Contents: read | list, excel, info (partial), README preview, backup download |
-| Dashboard | + Actions: read, Pages: read, Pull requests: read, Administration: read | full detail panel incl. CI status, Pages, traffic, issue/PR split |
-| Manager | + Administration: write | archive, describe, `edit`, `bulk`, topics, Dependabot alert/fix toggles, **delete** — fine-grained tokens bundle delete under Administration: write |
+| Dashboard | + Actions: read, Pages: read, Pull requests: read, Administration: read, Dependabot alerts: read, Secret scanning alerts: read | full detail panel incl. CI status, Pages, traffic, issue/PR split, alert counts, and security status |
+| Manager | + Administration: write, Contents: write | archive, describe, `edit`, `bulk`, topics, Dependabot alert/fix toggles, `sync` fork with upstream, **delete** — fine-grained tokens bundle delete under Administration: write |
 
 Fine-grained tokens cannot be introspected (GitHub sends no scope header), so
 `gman auth` shows `unknown` until a feature is used or you run

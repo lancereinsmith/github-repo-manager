@@ -27,6 +27,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   settings, archive/unarchive, topics, and Dependabot toggles to many repos
   sequentially, with dry-run and confirmation.
 - TUI `t` (topics) and `h` (homepage) editors.
+- Fork triage: `⑂` badge, ahead/behind status in the detail panel, `sync`
+  command, TUI `s` binding, and a "Sync fork with upstream" bulk operation.
+- Security posture in the detail panel and `info`: open Dependabot and
+  secret-scanning alert counts plus vulnerability-alerts status, with three
+  new capability families surfaced in `gman auth`.
 
 ## [0.1.0] - 2026-07-14
 

@@ -108,13 +108,26 @@ gman bulk --all --vulnerability-alerts on
 ```
 
 Bulk-only flags: `--archive`/`--unarchive`, `--vulnerability-alerts {on,off}`,
-`--security-fixes {on,off}`. `--rename`, `--description`, and `--topics`
+`--security-fixes {on,off}`, `--sync-fork`. `--rename`, `--description`, and `--topics`
 (replace-all) are deliberately not available in bulk.
 
 The command lists the operations and targets, then asks `Proceed? [y/N]`
 unless `--yes`. `--dry-run` stops after the listing. Writes run one repo at a
 time (GitHub throttles concurrent writes); a rate-limit abort marks the
 remainder `⏭ skipped`. Exit code is 0 only if every operation succeeded.
+
+## `sync`
+
+Sync a fork with its upstream (the same as GitHub's "Sync fork" button).
+
+```bash
+gman sync username/my-fork
+gman sync username/my-fork --branch release
+```
+
+Defaults to the repo's default branch. A merge conflict returns an error —
+resolve it locally. Bulk variant: `gman bulk --all --sync-fork` (non-forks are
+skipped). Needs `Contents: write` (fine-grained) or `repo` scope (classic).
 
 ## `delete`
 

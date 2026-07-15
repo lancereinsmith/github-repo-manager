@@ -7,7 +7,7 @@ your repos.
 
 - **Header** — app title and a sub-title showing `username — visible/total`
   plus the current filter, if any
-- **Table** — eight columns: ✓ (selection), Name, Vis. (🔒/🌐), Description, Lang,
+- **Table** — eight columns: ✓ (selection), Name, Vis. (🔒/🌐/⑂/❌/📌), Description, Lang,
   Stars, Open (open issues + PRs), Updated
 - **Footer** — keybinding hints
 
@@ -25,6 +25,7 @@ your repos.
 | `c` | Change the description of the selected repo |
 | `t` | Edit the selected repo's topics |
 | `h` | Edit the selected repo's homepage URL |
+| `s` | Sync the selected fork with its upstream |
 | `space` | Select/deselect the current repo (for bulk actions) |
 | `ctrl+a` | Select all visible repos (again to deselect) |
 | `b` | Bulk-action menu for the selected repos |
@@ -65,6 +66,9 @@ the new value to GitHub via PATCH; submit empty to clear the description.
 `Enter` or `i` opens a lazy-loaded panel for the selected repo. Each row is
 fetched independently — fields your token can't access show `—` with a hint
 instead of failing. Results are cached until the repo changes or you refresh.
+
+The panel includes rows for fork status (⑂ fork of owner/repo — N ahead / M behind)
+and security posture (Dependabot alerts · secret-scanning · vulnerability alerts ON/OFF).
 
 ### Delete confirmation extras
 
