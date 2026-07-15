@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -466,6 +467,109 @@ def cli_sync(client: GitHubClient, full_name: str, branch: str | None) -> int:
     return 0 if ok else 1
 
 
+def cli_actions(client: GitHubClient, args: argparse.Namespace) -> int:
+    full = args.repo_name
+    actions = [
+        bool(args.clear_artifacts),
+        bool(args.clear_caches),
+        args.rerun is not None,
+        args.cancel is not None,
+    ]
+    if sum(actions) > 1:
+        print("Error: pass at most one action at a time.", file=sys.stderr)
+        return 2
+    if args.older_than is not None and not args.clear_artifacts:
+        print("Error: --older-than requires --clear-artifacts.", file=sys.stderr)
+        return 2
+    if args.failed_only and args.rerun is None:
+        print("Error: --failed-only requires --rerun.", file=sys.stderr)
+        return 2
+
+    if args.rerun is not None:
+        ok, msg = client.rerun_workflow(full, args.rerun, failed_only=args.failed_only)
+        print(("✅ " if ok else "❌ ") + msg)
+        return 0 if ok else 1
+    if args.cancel is not None:
+        ok, msg = client.cancel_workflow(full, args.cancel)
+        print(("✅ " if ok else "❌ ") + msg)
+        return 0 if ok else 1
+    if args.clear_artifacts:
+        return _clear_listing(
+            client,
+            full,
+            client.list_artifacts,
+            client.delete_artifact,
+            "artifact",
+            args.older_than,
+        )
+    if args.clear_caches:
+        return _clear_listing(client, full, client.list_caches, client.delete_cache, "cache", None)
+    return _actions_overview(client, full)
+
+
+def _clear_listing(client, full, list_fn, delete_fn, noun, older_than_days) -> int:
+    items = list_fn(full)
+    if items is None:
+        print(f"Error: {noun}s unavailable (permission?).", file=sys.stderr)
+        return 1
+    if older_than_days is not None:
+        cutoff = datetime.now(timezone.utc).timestamp() - older_than_days * 86400
+        items = [
+            i
+            for i in items
+            if datetime.strptime(i["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+            .replace(tzinfo=timezone.utc)
+            .timestamp()
+            < cutoff
+        ]
+    if not items:
+        print(f"No {noun}s to delete.")
+        return 0
+    failures = 0
+    freed = 0
+    for item in items:
+        ok, msg = delete_fn(full, item["id"])
+        glyph = "✅" if ok else "❌"
+        print(f"{glyph} {noun} {item['id']}: {msg}")
+        failures += 0 if ok else 1
+        freed += item.get("size_in_bytes") or 0 if ok else 0
+    print(f"Freed {freed / 1_000_000:.0f} MB ({len(items) - failures} of {len(items)} {noun}s).")
+    return 0 if failures == 0 else 1
+
+
+def _actions_overview(client: GitHubClient, full: str) -> int:
+    def unavailable(label: str, family: str) -> str:
+        return f"{label}: unavailable — {client.capabilities.hint(family)}"
+
+    runs = client.list_recent_runs(full, limit=5)
+    if runs is None:
+        print(unavailable("Recent runs", "actions.read"))
+    else:
+        print("Recent runs:")
+        for run in runs:
+            glyph = {"success": "✅", "failure": "❌"}.get(run.get("conclusion") or "", "…")
+            when = (run.get("created_at") or "")[:10]
+            print(
+                f"  {glyph} {run.get('name') or 'workflow'} "
+                f"({run.get('conclusion') or run.get('status')}) {when}"
+            )
+
+    arts = client.list_artifacts(full)
+    if arts is None:
+        print(unavailable("Artifacts", "actions.read"))
+    else:
+        total = sum(a.get("size_in_bytes") or 0 for a in arts)
+        print(f"Artifacts: {len(arts)} ({total / 1_000_000:.0f} MB)")
+
+    usage = client.get_actions_cache_usage(full)
+    if usage is None:
+        print(unavailable("Caches", "actions.read"))
+    else:
+        mb = usage.get("active_caches_size_in_bytes", 0) / 1_000_000
+        print(f"Caches: {usage.get('active_caches_count', 0)} ({mb:.0f} MB)")
+    return 0
+
+
 def cli_auth(client: GitHubClient, probe: bool) -> int:
     login = client.whoami()  # also captures X-OAuth-Scopes on the first response
     if login is None:
@@ -572,6 +676,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Branch to sync (default: the repo's default branch).",
     )
 
+    p_act = sub.add_parser("actions", help="Inspect and clean a repo's GitHub Actions storage.")
+    p_act.add_argument("repo_name", help="username/repo")
+    p_act.add_argument("--clear-artifacts", action="store_true")
+    p_act.add_argument("--older-than", type=int, metavar="DAYS")
+    p_act.add_argument("--clear-caches", action="store_true")
+    p_act.add_argument("--rerun", type=int, metavar="RUN_ID")
+    p_act.add_argument("--failed-only", action="store_true")
+    p_act.add_argument("--cancel", type=int, metavar="RUN_ID")
+
     p_info = sub.add_parser("info", help="Show detailed info for one repo.")
     p_info.add_argument("repo_name", help="username/repo")
     p_info.add_argument("--json", dest="as_json", action="store_true")
@@ -617,6 +730,8 @@ def main(argv: list[str] | None = None) -> int:
             return cli_bulk(client, args)
         if args.command == "sync":
             return cli_sync(client, args.repo_name, args.branch)
+        if args.command == "actions":
+            return cli_actions(client, args)
         if args.command == "info":
             return cli_info(client, args.repo_name, args.as_json)
         if args.command == "auth":

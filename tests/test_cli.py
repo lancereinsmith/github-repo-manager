@@ -521,3 +521,86 @@ def test_sync_branch_override(capsys) -> None:
 def test_parser_accepts_sync() -> None:
     args = cli.build_parser().parse_args(["sync", "o/r", "--branch", "main"])
     assert args.command == "sync" and args.branch == "main"
+
+
+def _actions_args(*argv: str):
+    return cli.build_parser().parse_args(["actions", "octocat/r", *argv])
+
+
+def test_actions_flag_exclusivity(capsys) -> None:
+    class FakeClient:
+        pass
+
+    rc = cli.cli_actions(FakeClient(), _actions_args("--clear-artifacts", "--clear-caches"))
+    assert rc == 2
+    assert "one action" in capsys.readouterr().err
+
+
+def test_actions_orphan_modifiers(capsys) -> None:
+    class FakeClient:
+        pass
+
+    assert cli.cli_actions(FakeClient(), _actions_args("--older-than", "30")) == 2
+    assert cli.cli_actions(FakeClient(), _actions_args("--failed-only")) == 2
+
+
+def test_actions_rerun_and_cancel(capsys) -> None:
+    calls = []
+
+    class FakeClient:
+        def rerun_workflow(self, full, run_id, failed_only=False):
+            calls.append(("rerun", run_id, failed_only))
+            return True, "Re-ran run"
+
+        def cancel_workflow(self, full, run_id):
+            calls.append(("cancel", run_id))
+            return True, "Cancelled run"
+
+    assert cli.cli_actions(FakeClient(), _actions_args("--rerun", "7", "--failed-only")) == 0
+    assert cli.cli_actions(FakeClient(), _actions_args("--cancel", "9")) == 0
+    assert calls == [("rerun", 7, True), ("cancel", 9)]
+
+
+def test_actions_clear_artifacts_older_than(monkeypatch, capsys) -> None:
+    deleted = []
+
+    class FakeClient:
+        def list_artifacts(self, full):
+            return [
+                {"id": 1, "size_in_bytes": 10, "created_at": "2020-01-01T00:00:00Z"},
+                {"id": 2, "size_in_bytes": 10, "created_at": "2099-01-01T00:00:00Z"},
+            ]
+
+        def delete_artifact(self, full, artifact_id):
+            deleted.append(artifact_id)
+            return True, "ok"
+
+    rc = cli.cli_actions(FakeClient(), _actions_args("--clear-artifacts", "--older-than", "30"))
+    assert rc == 0
+    assert deleted == [1]  # only the ancient one
+
+
+def test_actions_overview_degrades(capsys) -> None:
+    class FakeClient:
+        def list_recent_runs(self, full, limit=5):
+            return [{"name": "CI", "conclusion": "success", "created_at": "2026-01-01T00:00:00Z"}]
+
+        def list_artifacts(self, full):
+            return None
+
+        def get_actions_cache_usage(self, full):
+            return {"active_caches_size_in_bytes": 0, "active_caches_count": 0}
+
+        class capabilities:  # noqa: N801 - minimal stub
+            @staticmethod
+            def resolve(f):
+                return False
+
+            @staticmethod
+            def hint(f):
+                return "needs Actions: read"
+
+    rc = cli.cli_actions(FakeClient(), _actions_args())
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "CI" in out and "unavailable" in out
