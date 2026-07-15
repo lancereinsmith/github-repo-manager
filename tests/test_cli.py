@@ -604,3 +604,79 @@ def test_actions_overview_degrades(capsys) -> None:
     out = capsys.readouterr().out
     assert rc == 0
     assert "CI" in out and "unavailable" in out
+
+
+def _new_args(*argv: str):
+    return cli.build_parser().parse_args(["new", *argv])
+
+
+def test_new_creates_repo(capsys) -> None:
+    seen = {}
+
+    class FakeClient:
+        def create_repo(self, fields):
+            seen.update(fields)
+            return True, "Created octocat/x — https://github.com/octocat/x"
+
+    rc = cli.cli_new(
+        FakeClient(),
+        _new_args("x", "--private", "--auto-init", "--gitignore", "Python", "--license", "mit"),
+    )
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert seen == {
+        "name": "x",
+        "private": True,
+        "auto_init": True,
+        "gitignore_template": "Python",
+        "license_template": "mit",
+    }
+    assert "git clone https://github.com/octocat/x.git" in out
+
+
+def test_new_from_template(capsys) -> None:
+    seen = {}
+
+    class FakeClient:
+        def create_from_template(self, template_full, fields):
+            seen["template"] = template_full
+            seen.update(fields)
+            return True, "Created octocat/gen — https://github.com/octocat/gen"
+
+    rc = cli.cli_new(FakeClient(), _new_args("gen", "--template", "tpl/base", "--private"))
+    assert rc == 0
+    assert seen == {"template": "tpl/base", "name": "gen", "private": True}
+
+
+def test_new_template_conflicts(capsys) -> None:
+    class FakeClient:
+        pass
+
+    rc = cli.cli_new(
+        FakeClient(), _new_args("x", "--template", "tpl/base", "--gitignore", "Python")
+    )
+    assert rc == 2
+    assert "cannot be combined" in capsys.readouterr().err
+
+
+def test_new_requires_name(capsys) -> None:
+    class FakeClient:
+        pass
+
+    rc = cli.cli_new(FakeClient(), _new_args())
+    assert rc == 2
+    assert "name" in capsys.readouterr().err.lower()
+
+
+def test_new_pickers(capsys) -> None:
+    class FakeClient:
+        def get_gitignore_templates(self):
+            return ["Python", "Go"]
+
+        def get_license_templates(self):
+            return [{"key": "mit", "name": "MIT License"}]
+
+    assert cli.cli_new(FakeClient(), _new_args("--list-gitignores")) == 0
+    assert cli.cli_new(FakeClient(), _new_args("--list-licenses")) == 0
+    out = capsys.readouterr().out
+    assert "Python" in out and "mit — MIT License" in out

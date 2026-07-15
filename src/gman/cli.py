@@ -467,6 +467,68 @@ def cli_sync(client: GitHubClient, full_name: str, branch: str | None) -> int:
     return 0 if ok else 1
 
 
+def cli_new(client: GitHubClient, args: argparse.Namespace) -> int:
+    if args.list_gitignores:
+        templates = client.get_gitignore_templates()
+        if templates is None:
+            print("Error: could not fetch gitignore templates.", file=sys.stderr)
+            return 1
+        print("\n".join(templates))
+        return 0
+    if args.list_licenses:
+        licenses = client.get_license_templates()
+        if licenses is None:
+            print("Error: could not fetch licenses.", file=sys.stderr)
+            return 1
+        for lic in licenses:
+            print(f"{lic.get('key')} — {lic.get('name')}")
+        return 0
+    if not args.name:
+        print(
+            "Error: a repo name is required (see gman new --help).",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.template:
+        if args.auto_init or args.gitignore or args.license or args.homepage:
+            print(
+                "Error: --template cannot be combined with "
+                "--auto-init/--gitignore/--license/--homepage.",
+                file=sys.stderr,
+            )
+            return 2
+        fields: dict[str, Any] = {"name": args.name}
+        if args.private:
+            fields["private"] = True
+        if args.description is not None:
+            fields["description"] = args.description
+        if args.include_all_branches:
+            fields["include_all_branches"] = True
+        ok, msg = client.create_from_template(args.template, fields)
+    else:
+        fields = {"name": args.name}
+        if args.private:
+            fields["private"] = True
+        if args.description is not None:
+            fields["description"] = args.description
+        if args.homepage is not None:
+            fields["homepage"] = args.homepage
+        if args.auto_init:
+            fields["auto_init"] = True
+        if args.gitignore:
+            fields["gitignore_template"] = args.gitignore
+        if args.license:
+            fields["license_template"] = args.license
+        ok, msg = client.create_repo(fields)
+
+    print(("✅ " if ok else "❌ ") + msg)
+    if ok and " — " in msg:
+        url = msg.rsplit(" — ", 1)[1]
+        print(f"clone with: git clone {url}.git")
+    return 0 if ok else 1
+
+
 def cli_actions(client: GitHubClient, args: argparse.Namespace) -> int:
     full = args.repo_name
     actions = [
@@ -685,6 +747,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_act.add_argument("--failed-only", action="store_true")
     p_act.add_argument("--cancel", type=int, metavar="RUN_ID")
 
+    p_new = sub.add_parser("new", help="Create a repository.")
+    p_new.add_argument("name", nargs="?", help="Repository name.")
+    p_new.add_argument("--private", action="store_true")
+    p_new.add_argument("--description")
+    p_new.add_argument("--homepage")
+    p_new.add_argument("--auto-init", action="store_true", help="Initialize with a README.")
+    p_new.add_argument("--gitignore", metavar="TEMPLATE")
+    p_new.add_argument("--license", metavar="TEMPLATE")
+    p_new.add_argument("--template", metavar="OWNER/REPO", help="Generate from a template repo.")
+    p_new.add_argument("--include-all-branches", action="store_true")
+    p_new.add_argument("--list-gitignores", action="store_true")
+    p_new.add_argument("--list-licenses", action="store_true")
+
     p_info = sub.add_parser("info", help="Show detailed info for one repo.")
     p_info.add_argument("repo_name", help="username/repo")
     p_info.add_argument("--json", dest="as_json", action="store_true")
@@ -732,6 +807,8 @@ def main(argv: list[str] | None = None) -> int:
             return cli_sync(client, args.repo_name, args.branch)
         if args.command == "actions":
             return cli_actions(client, args)
+        if args.command == "new":
+            return cli_new(client, args)
         if args.command == "info":
             return cli_info(client, args.repo_name, args.as_json)
         if args.command == "auth":
