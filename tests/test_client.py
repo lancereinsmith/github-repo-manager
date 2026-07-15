@@ -523,3 +523,52 @@ def test_security_fixes_failure_tuple(client: GitHubClient) -> None:
     ok, msg = client.set_automated_security_fixes("o/r", True)
 
     assert not ok and "422" in msg
+
+
+@responses.activate
+def test_dependabot_alert_count_via_link(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/o/r/dependabot/alerts",
+        json=[{"number": 1}],
+        status=200,
+        headers={
+            "Link": (
+                f"<{DEFAULT_API_URL}/repos/o/r/dependabot/alerts?state=open&per_page=1&page=7>; "
+                'rel="last"'
+            )
+        },
+    )
+    assert client.get_open_dependabot_alert_count("o/r") == 7
+
+
+@responses.activate
+def test_dependabot_count_403_marks_family(client: GitHubClient) -> None:
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/r/dependabot/alerts", status=403)
+    assert client.get_open_dependabot_alert_count("o/r") is None
+    assert client.capabilities.resolve("dependabot.read") is False
+
+
+@responses.activate
+def test_secret_alert_count_zero_and_disabled(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET, f"{DEFAULT_API_URL}/repos/o/r/secret-scanning/alerts", json=[], status=200
+    )
+    assert client.get_open_secret_alert_count("o/r") == 0
+
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/x/secret-scanning/alerts", status=404)
+    # 404 = secret scanning not enabled on the repo → absent, and authz passed
+    assert client.get_open_secret_alert_count("o/x") is None
+    assert client.capabilities.resolve("secret_scanning.read") is True
+
+
+@responses.activate
+def test_vulnerability_alerts_enabled_tristate(client: GitHubClient) -> None:
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/on/vulnerability-alerts", status=204)
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/off/vulnerability-alerts", status=404)
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/no/vulnerability-alerts", status=403)
+
+    assert client.get_vulnerability_alerts_enabled("o/on") is True
+    assert client.get_vulnerability_alerts_enabled("o/off") is False
+    assert client.get_vulnerability_alerts_enabled("o/no") is None
+    assert client.capabilities.resolve("admin.read") is False

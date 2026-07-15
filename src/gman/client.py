@@ -334,11 +334,9 @@ class GitHubClient:
             "unique_clones": c.get("uniques", 0),
         }
 
-    def get_open_pr_count(self, full_name: str) -> int | None:
-        """Count open PRs using the Link-header pagination trick (1 request)."""
-        r = self._get_optional(
-            "pulls.read", f"/repos/{full_name}/pulls", params={"state": "open", "per_page": 1}
-        )
+    def _open_count(self, family: str, path: str) -> int | None:
+        """Count open items with one request via the Link-header pagination trick."""
+        r = self._get_optional(family, path, params={"state": "open", "per_page": 1})
         if r is None:
             return None
         body = r.json()
@@ -346,6 +344,33 @@ class GitHubClient:
             return 0
         m = re.search(r'[?&]page=(\d+)>;\s*rel="last"', r.headers.get("Link", ""))
         return int(m.group(1)) if m else len(body)
+
+    def get_open_pr_count(self, full_name: str) -> int | None:
+        """Count open PRs using the Link-header pagination trick (1 request)."""
+        return self._open_count("pulls.read", f"/repos/{full_name}/pulls")
+
+    def get_open_dependabot_alert_count(self, full_name: str) -> int | None:
+        """Count open Dependabot alerts, or `None` when unavailable."""
+        return self._open_count("dependabot.read", f"/repos/{full_name}/dependabot/alerts")
+
+    def get_open_secret_alert_count(self, full_name: str) -> int | None:
+        """Count open secret-scanning alerts; `None` when unavailable or scanning is off."""
+        return self._open_count(
+            "secret_scanning.read", f"/repos/{full_name}/secret-scanning/alerts"
+        )
+
+    def get_vulnerability_alerts_enabled(self, full_name: str) -> bool | None:
+        """Return whether Dependabot vulnerability alerts are enabled, or `None`."""
+        r = self._request("GET", f"/repos/{full_name}/vulnerability-alerts")
+        if r.status_code == 204:
+            self.capabilities.mark("admin.read", True)
+            return True
+        if r.status_code == 404:
+            self.capabilities.mark("admin.read", True)
+            return False
+        if r.status_code == 403:
+            self.capabilities.mark("admin.read", False)
+        return None
 
     def download_tarball(self, full_name: str, ref: str, dest: Path) -> Path:
         """Stream a repo tarball to `dest`. Raises `GitHubError` on failure.
