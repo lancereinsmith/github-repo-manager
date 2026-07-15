@@ -43,3 +43,15 @@ def test_toggle_all_selects_then_deselects() -> None:
     assert toggle_all({"o/a"}, visible) == {"o/a", "o/b"}  # partial → select all
     assert toggle_all({"o/a", "o/b", "o/c"}, visible) == {"o/c"}  # all visible → drop them
     assert toggle_all(set(), set()) == set()
+
+
+def test_row_for_repo_fork_badge() -> None:
+    repo = make_repo("zeta", fork=True)
+    row = row_for_repo(repo, pinned=set(), selected=set())
+    assert row[2] == "🌐⑂"
+
+
+def test_row_for_repo_fork_badge_order_with_all_badges() -> None:
+    repo = make_repo("eta", private=True, archived=True, fork=True)
+    row = row_for_repo(repo, pinned={"octocat/eta"}, selected=set())
+    assert row[2] == "🔒⑂❌📌"

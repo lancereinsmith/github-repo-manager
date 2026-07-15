@@ -48,6 +48,8 @@ def row_for_repo(
     if len(desc) > 80:
         desc = desc[:77] + "…"
     vis = "🔒" if repo["private"] else "🌐"
+    if repo.get("fork"):
+        vis += "⑂"
     if repo.get("archived"):
         vis += "❌"
     if repo.get("full_name") in pinned:
@@ -475,6 +477,7 @@ class GitHubRepoApp(App[None]):
         Binding("c", "edit_description", "Change desc"),
         Binding("t", "edit_topics", "Topics"),
         Binding("h", "edit_homepage", "Homepage"),
+        Binding("s", "sync_fork", "Sync fork"),
         Binding("d", "delete_repo", "Delete"),
         Binding("slash", "filter", "Filter"),
         Binding("space", "toggle_select", "Select"),
@@ -713,6 +716,24 @@ class GitHubRepoApp(App[None]):
                 self.notify(f"Update failed: {escape(msg)}", severity="error")
 
         self.push_screen(EditHomepageScreen(full, current), after)
+
+    def action_sync_fork(self) -> None:
+        repo = self._selected_repo()
+        if not repo:
+            return
+        if not repo.get("fork"):
+            self.notify("Not a fork — nothing to sync.", severity="warning")
+            return
+        self._sync_worker(repo)
+
+    @work(thread=True)
+    def _sync_worker(self, repo: dict[str, Any]) -> None:
+        branch = repo.get("default_branch") or "HEAD"
+        ok, msg = self.client.merge_upstream(repo["full_name"], branch)
+        severity = "information" if ok else "error"
+        self.call_from_thread(self.notify, escape(msg), severity=severity)
+        if ok:
+            self.call_from_thread(self.load_repos)
 
     def action_show_details(self) -> None:
         repo = self._selected_repo()
