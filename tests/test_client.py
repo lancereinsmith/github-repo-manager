@@ -607,3 +607,84 @@ def test_merge_upstream_success_and_conflict(client: GitHubClient) -> None:
     )
     ok2, msg2 = client.merge_upstream("o/fork", "main")
     assert not ok2 and "409" in msg2
+
+
+@responses.activate
+def test_actions_cache_usage(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/o/r/actions/cache/usage",
+        json={"active_caches_size_in_bytes": 480_000_000, "active_caches_count": 3},
+        status=200,
+    )
+    usage = client.get_actions_cache_usage("o/r")
+    assert usage is not None and usage["active_caches_count"] == 3
+
+
+@responses.activate
+def test_artifact_count_from_body(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/o/r/actions/artifacts",
+        json={"total_count": 12, "artifacts": [{"id": 1}]},
+        status=200,
+    )
+    assert client.get_artifact_count("o/r") == 12
+
+
+@responses.activate
+def test_list_artifacts_paginates(client: GitHubClient) -> None:
+    page1 = {"total_count": 101, "artifacts": [{"id": i} for i in range(100)]}
+    page2 = {"total_count": 101, "artifacts": [{"id": 100}]}
+    responses.add(
+        responses.GET, f"{DEFAULT_API_URL}/repos/o/r/actions/artifacts", json=page1, status=200
+    )
+    responses.add(
+        responses.GET, f"{DEFAULT_API_URL}/repos/o/r/actions/artifacts", json=page2, status=200
+    )
+    arts = client.list_artifacts("o/r")
+    assert arts is not None and len(arts) == 101
+
+
+@responses.activate
+def test_list_artifacts_denied_first_page(client: GitHubClient) -> None:
+    responses.add(responses.GET, f"{DEFAULT_API_URL}/repos/o/r/actions/artifacts", status=403)
+    assert client.list_artifacts("o/r") is None
+    assert client.capabilities.resolve("actions.read") is False
+
+
+@responses.activate
+def test_list_caches_and_recent_runs(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/o/r/actions/caches",
+        json={"total_count": 1, "actions_caches": [{"id": 5, "key": "k", "size_in_bytes": 9}]},
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/repos/o/r/actions/runs",
+        json={"workflow_runs": [{"id": 1, "name": "CI"}]},
+        status=200,
+    )
+    caches = client.list_caches("o/r")
+    runs = client.list_recent_runs("o/r", limit=5)
+    assert caches is not None and caches[0]["key"] == "k"
+    assert runs is not None and runs[0]["name"] == "CI"
+    assert "per_page=5" in str(responses.calls[1].request.url)
+
+
+@responses.activate
+def test_template_pickers(client: GitHubClient) -> None:
+    responses.add(
+        responses.GET, f"{DEFAULT_API_URL}/gitignore/templates", json=["Python", "Go"], status=200
+    )
+    responses.add(
+        responses.GET,
+        f"{DEFAULT_API_URL}/licenses",
+        json=[{"key": "mit", "name": "MIT License"}],
+        status=200,
+    )
+    assert client.get_gitignore_templates() == ["Python", "Go"]
+    licenses = client.get_license_templates()
+    assert licenses is not None and licenses[0]["key"] == "mit"

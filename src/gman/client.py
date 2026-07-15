@@ -457,3 +457,58 @@ class GitHubClient:
             family="contents.write",
             json={"branch": branch},
         )
+
+    def get_actions_cache_usage(self, full_name: str) -> dict[str, Any] | None:
+        """Actions cache usage for a repo (one call), or `None`."""
+        r = self._get_optional("actions.read", f"/repos/{full_name}/actions/cache/usage")
+        return r.json() if r is not None else None
+
+    def get_artifact_count(self, full_name: str) -> int | None:
+        """Total Actions artifact count (from the list body), or `None`."""
+        r = self._get_optional(
+            "actions.read", f"/repos/{full_name}/actions/artifacts", params={"per_page": 1}
+        )
+        return r.json().get("total_count", 0) if r is not None else None
+
+    def _list_paginated(self, family: str, path: str, key: str) -> list[dict[str, Any]] | None:
+        """Collect a paginated Actions listing; None if the first page is unavailable."""
+        items: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            r = self._get_optional(family, path, params={"per_page": 100, "page": page})
+            if r is None:
+                return None if page == 1 else items
+            batch = r.json().get(key) or []
+            items.extend(batch)
+            if len(batch) < 100:
+                return items
+            page += 1
+
+    def list_artifacts(self, full_name: str) -> list[dict[str, Any]] | None:
+        """All Actions artifacts for a repo, or `None` when unavailable."""
+        return self._list_paginated(
+            "actions.read", f"/repos/{full_name}/actions/artifacts", "artifacts"
+        )
+
+    def list_caches(self, full_name: str) -> list[dict[str, Any]] | None:
+        """All Actions caches for a repo, or `None` when unavailable."""
+        return self._list_paginated(
+            "actions.read", f"/repos/{full_name}/actions/caches", "actions_caches"
+        )
+
+    def list_recent_runs(self, full_name: str, limit: int = 5) -> list[dict[str, Any]] | None:
+        """The most recent workflow runs, or `None`."""
+        r = self._get_optional(
+            "actions.read", f"/repos/{full_name}/actions/runs", params={"per_page": limit}
+        )
+        return (r.json().get("workflow_runs") or []) if r is not None else None
+
+    def get_gitignore_templates(self) -> list[str] | None:
+        """Available gitignore template names (no permissions required)."""
+        r = self._get_optional("metadata.read", "/gitignore/templates")
+        return r.json() if r is not None else None
+
+    def get_license_templates(self) -> list[dict[str, Any]] | None:
+        """Available license templates (no permissions required)."""
+        r = self._get_optional("metadata.read", "/licenses")
+        return r.json() if r is not None else None
